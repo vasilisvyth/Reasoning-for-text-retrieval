@@ -1,0 +1,5 @@
+
+    - tensorflow
+    - sentencepiece
+    - gensim = 3.8.2
+    - nltk

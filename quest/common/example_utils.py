@@ -17,7 +17,7 @@
 import dataclasses
 import typing
 
-from language.quest.common import jsonl_utils
+from quest.common import jsonl_utils
 
 
 @dataclasses.dataclass(frozen=False)
@@ -59,6 +59,10 @@ class Example:
 
 
 def read_examples(filepath):
+  import json
+
+
+
   examples_json = jsonl_utils.read(filepath)
   examples = [Example(**example) for example in examples_json]
   for example in examples:

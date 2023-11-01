@@ -16,7 +16,7 @@
 
 import dataclasses
 
-from language.quest.common import jsonl_utils
+from quest.common import jsonl_utils
 
 
 @dataclasses.dataclass(frozen=True)
@@ -29,6 +29,10 @@ class Document:
 
 
 def read_documents(filepath, limit=None):
+  '''
+  ADDED BY ME
+    limit represents a limit on how many docs to read 
+  '''
   documents_json = jsonl_utils.read(filepath, limit=limit, verbose=True)
   return [Document(**document) for document in documents_json]
 

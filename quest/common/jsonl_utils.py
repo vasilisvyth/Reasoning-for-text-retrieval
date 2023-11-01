@@ -19,8 +19,29 @@ from tensorflow.io import gfile
 
 
 def read(filepath, limit=None, verbose=False):
-  """Read jsonl file to a List of Dicts."""
+  """Read jsonl file to a List of Dicts.
+  ADDED BY ME:
+    verbose: An optional boolean parameter that controls whether to print progress messages (default is False).
+
+    Each examples file contains newline-separated json dictionaries with the following fields:
+
+    query - Paraphrased query written by annotators.
+    docs - List of relevant document titles.
+    original_query - The original query which was paraphrased. Atomic queries are enclosed by <mark></mark>. Augmented queries do not have this field populated.
+    scores - This field is not populated and only used when producing predictions to enable sharing the same data structure.
+    metadata - A dictionary with the following fields:
+        template - The template used to create the query.
+        domain - The domain to which the query belongs.
+        fluency - List of fluency ratings for the query.
+        meaning - List of ratings for whether the paraphrased query meaning is the same as the original query.
+        naturalness - List of naturalness ratings for the query.
+        relevance_ratings - Dictionary mapping document titles to relevance ratings for the document.
+        evidence_ratings - Dictionary mapping document titles to evidence ratings for the document.
+        attributions - Dictionary mapping a document title to its attributions attributions are a list of dictionaries mapping a query substring to a document substring.
+
+  """
   data = []
+  templates = []
   with gfile.GFile(filepath, "r") as jsonl_file:
     for idx, line in enumerate(jsonl_file):
       if limit is not None and idx >= limit:
@@ -29,7 +50,9 @@ def read(filepath, limit=None, verbose=False):
         # Print the index every 100 lines.
         print("Processing line %s." % idx)
       try:
-        data.append(json.loads(line))
+        dict = json.loads(line)
+        templates.append(dict['metadata']['template'])
+        data.append(dict)
       except json.JSONDecodeError as e:
         print("Failed to parse line: `%s`" % line)
         raise e
