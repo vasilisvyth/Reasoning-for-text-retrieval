@@ -17,6 +17,8 @@ r"""Script to write files for mapping documents to IDs.
 Writes two output files:
 * TSV file with document titles and ids.
 * TSV file with document text and ids.
+
+Convert to the indexed format used by the t5x_retrieval library.
 """
 
 from absl import app

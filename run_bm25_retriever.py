@@ -26,9 +26,9 @@ from quest.common import example_utils
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("examples", "quest_data\\train.jsonl", "Path to examples jsonl file.")
+flags.DEFINE_string("examples", "quest_data\\train_aug.jsonl", "Path to examples jsonl file.")
 
-flags.DEFINE_string("docs", "", "Path to document corpus jsonl file.")
+flags.DEFINE_string("docs", "quest_data\\documents.jsonl", "Path to document corpus jsonl file.")
 
 flags.DEFINE_string("output", "", "Path to write predictions jsonl file.")
 
@@ -38,6 +38,10 @@ flags.DEFINE_integer("topk", 1000, "Number of documents to retrieve.")
 
 
 def main(unused_argv):
+  """
+  First, they read the queries with the candidates documents titles.
+  Then, they read the whole documents and calculate tf, idf etc. on them
+  """
   examples = example_utils.read_examples(FLAGS.examples)
 
   if FLAGS.sample > 0:
@@ -46,8 +50,19 @@ def main(unused_argv):
 
   print("Reading documents.")
   documents = document_utils.read_documents(FLAGS.docs)
+  all_doc_titles = [doc.title for doc in documents]
+
+
+  for example in examples:
+    candidate_docs = example.docs 
+    for doc in candidate_docs:
+      if(doc not in all_doc_titles):
+        a=1
+
+  print(documents[2].text)
   print("Finished reading documents.")
   print("Initializing BM25 retriever.")
+  # calculate df, idf etc.
   retriever = bm25_retriever.BM25Retriever(documents)
   print("Finished initializing BM25 retriever.")
 

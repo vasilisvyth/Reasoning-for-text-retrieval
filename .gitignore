@@ -1,1 +1,3 @@
 quest_simple
+**/__pycache__/
+quest_data/documents.jsonl

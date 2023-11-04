@@ -41,7 +41,7 @@ def read(filepath, limit=None, verbose=False):
 
   """
   data = []
-  templates = []
+  # templates = []
   with gfile.GFile(filepath, "r") as jsonl_file:
     for idx, line in enumerate(jsonl_file):
       if limit is not None and idx >= limit:
@@ -51,7 +51,7 @@ def read(filepath, limit=None, verbose=False):
         print("Processing line %s." % idx)
       try:
         dict = json.loads(line)
-        templates.append(dict['metadata']['template'])
+        # templates.append(dict['metadata']['template'])
         data.append(dict)
       except json.JSONDecodeError as e:
         print("Failed to parse line: `%s`" % line)

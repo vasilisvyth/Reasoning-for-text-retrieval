@@ -21,6 +21,8 @@ Writes three tsv files with rows:
 
 This requires that `write_doc_idx_maps.py` has been run to provide a TSV file
 mapping document titles to IDs.
+
+Converts examples to the indexed format used in t5x_retrieval library.
 """
 
 import random

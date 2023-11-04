@@ -60,3 +60,9 @@ Code and documentation for various baseline systems are in the following sub-dir
 * `t5xr/` - Dual encoder based on `t5x_retrieval` library.
 * `xattn/` - T5-based cross-attention classifier.
 
+# ME
+Use write_doc_idx_maps.py and convert_examples.py to convert examples and documents jsonl files to the indexed format used by the t5x_retrieval library.
+
+To generate training examples, you can run gen_training_examples.py. This script can also run on the validation set to generate an evaluation set to efficiently evaluate model performance during fine-tuning.
+
+To generate predictions, you should first run gen_inference_inputs.py. Then, generate scores following the inference instructions from the t5x library with --gin.infer.mode="'score'". You can determine a threshold by running determine_threshold.py on the validation set. Then, you can run filter_predictions.py to filter a set of retrieved documents based on the cross-attention classifier.
