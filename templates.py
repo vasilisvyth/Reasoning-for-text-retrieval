@@ -1,5 +1,3 @@
-query = 'Birds found in the Venezuelan Andes but not in Colombia'
-
 template2logic = {
 '_ or _':'A or B',
 '_ that are not _':'A and not B',
@@ -18,9 +16,10 @@ template2logic = {
 #! A and B
 #! A and not B
 
-templates = {0:'''
-Think step by step to carry out the instruction. You are only allowed to write python code.
+INSTRUCTION = 'Think step by step to carry out the Instruction. You are only allowed to write python code.'
 
+DEMONSTRATIONS = {0:{
+'ex1':'''
 Instruction: 1998 fiction books based on Doctor Who
 Program:
 ```
@@ -34,6 +33,8 @@ doctor_who_books = 'books based on Doctor Who'
 # Combine using the correct logical operator if needed
 answer = books_1998 and fiction_books and doctor_who_books
 ```
+''',
+'ex2':'''
 Instruction: Films based on works by Stanisław Lem
 Program:
 ```
@@ -45,21 +46,23 @@ stanislaw_lem_films = 'Films based on works by Stanisław Lem'
 # Combine using the correct logical operator if needed
 answer = stanislaw_lem_films
 ```
- 
+''',
+'ex3':'''
 Instruction: Indian musical and Malayalam films remade in other languages but not featuring an item number
 Program:
 ```
 question = 'Indian musical and Malayalam films remade in other languages but not featuring an item number'
 
 # Define the subquestions
-indian_musical_films = 'Indian musical remade in other languages'
+indian_musical_films = 'Indian musical films remade in other languages'
 malayalam_films = 'Malayalam films remade in other languages'
 item_number_films = 'films featuring an item number'
 
 # Combine using the correct logical operator if needed
 answer = indian_musical_films and malayalam_films and not item_number_films
 ```
- 
+''',
+'ex4':'''
 Instruction: What are Vultures or Eocene reptiles of South America or Extinct animals of Peru?
 Program:
 ```
@@ -73,7 +76,8 @@ extinct_animals_peru = 'What are Extinct animals of Peru?'
 # Combine using the correct logical operator if needed
 answer = vultures or eocene_reptiles_south_america or extinct_animals_peru
 ```
- 
+''',
+'ex5':'''
 Instruction: Birds described in 1991 or Birds of the Western Province (Solomon Islands)
 Program:
 ```
@@ -86,7 +90,8 @@ birds_western_province = 'Birds of the Western Province (Solomon Islands)'
 # Combine using the correct logical operator if needed
 answer = birds_1991 or birds_western_province
 ```
- 
+''',
+'ex6':'''
 Instruction: New American Library Books about the military
 Program:
 ```
@@ -99,7 +104,8 @@ military_books = 'military books'
 # Combine using the correct logical operator if needed
 answer = new_american_library_books and military_books
 ```
-
+''',
+'ex0':'''
 Instruction: Vertebrate animals from Rwanda that are not also Sub-Saharan African mammals
 Program:
 ```
@@ -112,7 +118,30 @@ sub_Saharan_african_mammals = 'Sub-Saharan African mammals'
 # Combine using the correct logical operator if needed
 answer = vertebrate_animals_rwanda and not sub_Saharan_african_mammals
 ```
-'''}
+'''}}
+TEST_TEMPLATE = '''
+Instruction: {question}
+Program:
+```
+'''
+import random
+def create_rand_demonstrations(seed, num_demonstrations):
+    pool_size = len(DEMONSTRATIONS[seed])
+    rand_demonstrations_ids = random.sample(range(pool_size), num_demonstrations) # without repetition
+    return rand_demonstrations_ids
 
-tmp= templates[0]
+def concat_demonstations(seed, rand_demonstrations_ids):
+    seed_demonstrations = DEMONSTRATIONS[seed]
+    demonstations_txt = ''
+    for id in rand_demonstrations_ids:
+        ex_key = 'ex'+str(id)
+        tmp_demonstration_txt = seed_demonstrations[ex_key]
+        demonstations_txt += tmp_demonstration_txt
+    return demonstations_txt
+
+def concat_test2prompt(demonstations_text, query):
+    demonstations_text += TEST_TEMPLATE.format(question=query)
+    return demonstations_text
+
+tmp= INSTRUCTION+'\n'+DEMONSTRATIONS[0]['ex1']+DEMONSTRATIONS[0]['ex2']+TEST_TEMPLATE.format(question='This is my question')
 b=1
