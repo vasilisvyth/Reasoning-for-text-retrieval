@@ -123,7 +123,7 @@ TEST_TEMPLATE = '''
 How about this Instruction?
 Instruction: {question}
 Program:
-```
+```python
 '''
 import random
 def create_rand_demonstrations(seed, num_demonstrations):
