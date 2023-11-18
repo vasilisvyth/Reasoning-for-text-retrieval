@@ -65,7 +65,7 @@ def gpt_api_call(test_dict, args, openai_key, file_path):
             prompt_tokens += result.usage.prompt_tokens
 
             cost_dict = calculate_cost(completion_tokens, prompt_tokens, args.model_name)
-            pprint(cost_dict)
+            print(cost_dict)
 
             # Convert dictionary to JSON string
             json_string = json.dumps(test_dict, indent=4)
@@ -75,6 +75,8 @@ def gpt_api_call(test_dict, args, openai_key, file_path):
                 json_file.write(json_string)
 
 def main(args):
+    # file=open('la.json', "r")
+    # my_json = json.load(file)
     test_dir = args.test_dir
 
     openai_key = input("What is your OpenAI key? ")

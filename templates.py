@@ -22,7 +22,7 @@ DEMONSTRATIONS = {0:{
 'ex1':'''
 Instruction: 1998 fiction books based on Doctor Who
 Program:
-```
+```python
 question = '1998 fiction books based on Doctor Who'
 
 # Define the subquestions
@@ -37,7 +37,7 @@ answer = books_1998 and fiction_books and doctor_who_books
 'ex2':'''
 Instruction: Films based on works by Stanisław Lem
 Program:
-```
+```python
 question = 'Films based on works by Stanisław Lem'
 
 # Define the subquestions
@@ -50,7 +50,7 @@ answer = stanislaw_lem_films
 'ex3':'''
 Instruction: Indian musical and Malayalam films remade in other languages but not featuring an item number
 Program:
-```
+```python
 question = 'Indian musical and Malayalam films remade in other languages but not featuring an item number'
 
 # Define the subquestions
@@ -65,7 +65,7 @@ answer = indian_musical_films and malayalam_films and not item_number_films
 'ex4':'''
 Instruction: What are Vultures or Eocene reptiles of South America or Extinct animals of Peru?
 Program:
-```
+```python
 question = 'What are Vultures or Eocene reptiles of South America or Extinct animals of Peru?'
 
 # Define the subquestions
@@ -80,7 +80,7 @@ answer = vultures or eocene_reptiles_south_america or extinct_animals_peru
 'ex5':'''
 Instruction: Birds described in 1991 or Birds of the Western Province (Solomon Islands)
 Program:
-```
+```python
 question = 'Birds described in 1991 or Birds of the Western Province (Solomon Islands)'
 
 # Define the subquestions
@@ -94,7 +94,7 @@ answer = birds_1991 or birds_western_province
 'ex6':'''
 Instruction: New American Library Books about the military
 Program:
-```
+```python
 question = 'New American Library Books about the military'
  
 # Define the subquestions
@@ -108,7 +108,7 @@ answer = new_american_library_books and military_books
 'ex0':'''
 Instruction: Vertebrate animals from Rwanda that are not also Sub-Saharan African mammals
 Program:
-```
+```python
 question = 'Vertebrate animals from Rwanda that are not also Sub-Saharan African mammals'
  
 # Define the subquestions
@@ -120,6 +120,7 @@ answer = vertebrate_animals_rwanda and not sub_Saharan_african_mammals
 ```
 '''}}
 TEST_TEMPLATE = '''
+How about this Instruction?
 Instruction: {question}
 Program:
 ```
