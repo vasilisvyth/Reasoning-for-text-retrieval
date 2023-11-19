@@ -1,11 +1,11 @@
 template2logic = {
-'_ or _':'A or B',
-'_ that are not _':'A and not B',
-'_':'A',
-'_ that are also _ but not _': 'A and B and not C',
-'_ that are also _':'A and B',
-'_ or _ or _':'A or B or C',
-'_ that are also both _ and _':'A and B and C'
+'_ or _':[' or '],
+'_ that are not _':[' and ','not '],
+'_':[], 
+'_ that are also _ but not _': [' and ',' and ','not '],
+'_ that are also _':[' and '],
+'_ or _ or _':[' or ',' or '],
+'_ that are also both _ and _':[' and ',' and ']
 }
 
 #! A and B and C

@@ -38,19 +38,19 @@ random.seed(42)
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("examples", "", "Examples jsonl file.")
+flags.DEFINE_string("examples", "quest_data\\test.jsonl", "Examples jsonl file.")
 
-flags.DEFINE_string("doc_title_map", "", "TSV of doc ids and titles.")
+flags.DEFINE_string("doc_title_map", "quest_data\\doc_title_map.tsv", "TSV of doc ids and titles.")
 
-flags.DEFINE_string("doc_text_map", "", "TSV of doc ids and text.")
+flags.DEFINE_string("doc_text_map", "quest_data\\doc_text_map.tsv", "TSV of doc ids and text.")
 
-flags.DEFINE_string("indexed_queries", "",
+flags.DEFINE_string("indexed_queries", "quest_data\\test_query_ids_queries.tsv",
                     "Output filepath for indexed queries tsv file.")
 
-flags.DEFINE_string("indexed_examples", "",
+flags.DEFINE_string("indexed_examples", "quest_data\\test_query_ids_doc_ids.tsv",
                     "Output filepath for indexed examples tsv file.")
 
-flags.DEFINE_string("out_examples", "",
+flags.DEFINE_string("out_examples", "quest_data\\test_queries_docs.tsv",
                     "Output filepath for examples tsv file passed to t5xr.")
 
 

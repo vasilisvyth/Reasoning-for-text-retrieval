@@ -29,12 +29,12 @@ from quest.common import tsv_utils
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("documents", "", "Filepath of jsonl documents file.")
+flags.DEFINE_string("documents", "quest_data\\documents.jsonl", "Filepath of jsonl documents file.")
 
-flags.DEFINE_string("doc_title_map", "",
+flags.DEFINE_string("doc_title_map", "quest_data\\doc_title_map.tsv",
                     "Filepath to write doc titles and ids.")
 
-flags.DEFINE_string("doc_text_map", "", "Filepath to write doc text and ids.")
+flags.DEFINE_string("doc_text_map", "quest_data\\doc_text_map.tsv", "Filepath to write doc text and ids.")
 
 
 def main(unused_argv):

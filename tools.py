@@ -17,10 +17,11 @@ def safe_execute(code_string: str, keys=None):
         try:
             exec(x)
             locals_ = locals() # create copy of the current local variables
-            if keys is None:
-                return locals_.get('answer', None)
-            else:
-                return [locals_.get(k, None) for k in keys]
+            return locals_
+            # if keys is None:
+            #     return locals_.get('answer', None)
+            # else:
+            #     return [locals_.get(k, None) for k in keys]
         except Exception as e:
             print(f'Exception: {e}')
             return None
@@ -35,13 +36,23 @@ def safe_execute(code_string: str, keys=None):
 
 def synthesize_program(result: str, prefix: str) -> str:
     program = prefix
-    for i, line in enumerate(result.split('\n')):
-        if i == 0:
-            program += line + '\n'
-        else:
-            if line.startswith('    '):
-                program += line + '\n'
-            else:
-                break
-    program += 'ans = solver()'    
+    generated_txt = result.split('\n')
+    subquestions_block = False
+    subquestions = []
+    for i, line in enumerate(generated_txt):
+        if 'python' in line or line=='':
+            continue
+        elif line == '```':
+            break
+        # elif line == '# Define the subquestions':
+        #     subquestions_block = True
+        # elif line == '# Combine using the correct logical operator if needed':
+        #     subquestions_block = False
+        # elif subquestions_block:
+        #     dict = safe_execute(line)
+        #     subquestions.extend(list(dict.values()))
+
+
+        program += line + '\n'
+            
     return program

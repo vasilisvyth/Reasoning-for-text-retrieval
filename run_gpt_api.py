@@ -75,8 +75,6 @@ def gpt_api_call(test_dict, args, openai_key, file_path):
                 json_file.write(json_string)
 
 def main(args):
-    # file=open('la.json', "r")
-    # my_json = json.load(file)
     test_dir = args.test_dir
 
     openai_key = input("What is your OpenAI key? ")
