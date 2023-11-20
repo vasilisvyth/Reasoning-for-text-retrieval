@@ -7,14 +7,24 @@ template2logic = {
 '_ or _ or _':[' or ',' or '],
 '_ that are also both _ and _':[' and ',' and ']
 }
+# Α
+# Α or B, A or B or C
+# A and B, A and B and C, 
+# A and B and not C, A and not B
 
-#! A and B and C
-#! A
-#! A and B and not C
-#! A or B or C
-#! A or B
-#! A and B
-#! A and not B
+# Α, Α and B and C, A or B, A and B and not C
+# ex2, ex1, ex5, ex3
+
+# I think it will be easier to generalize from 3 operators to 2 operators than the opposite
+demonstration_op_map  = {
+'ex1':'A and B and C',
+'ex2':'A',
+'ex3':'A and B and not C',
+'ex4':'A or B or C',
+'ex5':'A or B',
+'ex6':'A and B',
+'ex0':'A and not B',
+}
 
 INSTRUCTION = 'Think step by step to carry out the Instruction. You are only allowed to write python code.'
 
@@ -125,24 +135,4 @@ Instruction: {question}
 Program:
 ```python
 '''
-import random
-def create_rand_demonstrations(seed, num_demonstrations):
-    pool_size = len(DEMONSTRATIONS[seed])
-    rand_demonstrations_ids = random.sample(range(pool_size), num_demonstrations) # without repetition
-    return rand_demonstrations_ids
 
-def concat_demonstations(seed, rand_demonstrations_ids):
-    seed_demonstrations = DEMONSTRATIONS[seed]
-    demonstations_txt = ''
-    for id in rand_demonstrations_ids:
-        ex_key = 'ex'+str(id)
-        tmp_demonstration_txt = seed_demonstrations[ex_key]
-        demonstations_txt += tmp_demonstration_txt
-    return demonstations_txt
-
-def concat_test2prompt(demonstations_text, query):
-    demonstations_text += TEST_TEMPLATE.format(question=query)
-    return demonstations_text
-
-tmp= INSTRUCTION+'\n'+DEMONSTRATIONS[0]['ex1']+DEMONSTRATIONS[0]['ex2']+TEST_TEMPLATE.format(question='This is my question')
-b=1

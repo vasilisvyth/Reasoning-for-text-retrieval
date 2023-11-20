@@ -8,9 +8,16 @@ from tqdm import tqdm
 from seeds import set_seed
 import random
 from quest.common import example_utils
-from templates import TEST_TEMPLATE, INSTRUCTION, DEMONSTRATIONS, create_rand_demonstrations, concat_demonstations, concat_test2prompt
+from templates import TEST_TEMPLATE, INSTRUCTION, DEMONSTRATIONS
+from templates_better_dem import INSTRUCTION_BETTER_DEM, DEMONSTRATIONS_BETTER_DEM, TEST_TEMPLATE_BETTER_DEM
+from template_construction import create_rand_demonstrations, concat_demonstations, concat_test2prompt
 import json
 import pprint
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_random_exponential,
+)  # for exponential backoff
 
 def calculate_cost(completion_tokens, prompt_tokens, model_name):
    # gpt-3.5-turbo-1106	input $0.0010 / 1K tokens completion $0.0020 / 1K tokens
@@ -27,12 +34,15 @@ def gpt_api_call(test_dict, args, openai_key, file_path):
     client = OpenAI(
     api_key=openai_key,  # this is also the default, it can be omitted
     )
+    i = 0
     for query in tqdm(test_dict):
             # we randomly use a sentence with 0.23 probability
             p = random.uniform(0, 1)
             if p >= 0.2:
                 continue
-            
+            i += 1
+            if i == 43:
+                break
             full_prompt = test_dict[query]['prompt']
             instruction = test_dict[query]['instruction']
 
@@ -49,14 +59,14 @@ def gpt_api_call(test_dict, args, openai_key, file_path):
                             messages=[
                             {"role": "system", "content": instruction},
                             {"role": "user", "content": full_prompt}],
-                            max_tokens=160,
+                            max_tokens=200,
                             n=1,
                             seed = args.seed
                             #stop=['\n\n'], # default is none
                         )
                         got_result = True
                     except Exception:
-                        sleep(3)
+                        sleep(5)
 
             prediction = result.choices[0].message.content
             test_dict[query]['pred'] = prediction
@@ -87,14 +97,14 @@ def main(args):
     for test_example in test_examples:
         query = test_example.query
         
-        rand_demonstrations_ids = create_rand_demonstrations(args.seed, args.num_demonstrations)
+        rand_demonstrations_ids = create_rand_demonstrations(args.seed, args.num_demonstrations, DEMONSTRATIONS_BETTER_DEM)
 
-        demonstations_text = concat_demonstations(args.seed, rand_demonstrations_ids)
-        demonstations_text = concat_test2prompt(demonstations_text, query)
+        demonstations_text = concat_demonstations(args.seed, rand_demonstrations_ids, DEMONSTRATIONS_BETTER_DEM)
+        demonstations_text = concat_test2prompt(demonstations_text, query, TEST_TEMPLATE_BETTER_DEM)
         demonstations_text = demonstations_text.lstrip()
         test_dict[query] = {}
         test_dict[query]['prompt'] = demonstations_text
-        test_dict[query]['instruction'] = INSTRUCTION
+        test_dict[query]['instruction'] = INSTRUCTION_BETTER_DEM
         test_dict[query]['model_name'] = args.model_name 
         test_dict[query]['template'] = test_example.metadata.template
         test_dict[query]['domain'] = test_example.metadata.domain
