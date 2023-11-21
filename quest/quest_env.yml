@@ -1,5 +1,23 @@
-
+name: quest_local
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - pip
+  - python
+  - pytorch
+  - pytorch-cuda
+  - pip:
     - tensorflow
     - sentencepiece
-    - gensim = 3.8.2
+    - gensim == 3.8.2
     - nltk
+    - transformers
+    - peft # maybe not needed
+    - func-timeout # maybe not needed
+    - openai # maybe not needed
+    - spacy # maybe not needed
+    - sentence-transformers # maybe not needed
+    - faiss # maybe not needed, if locally install faiss-cpu
