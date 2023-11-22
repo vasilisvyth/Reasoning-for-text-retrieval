@@ -34,15 +34,15 @@ def gpt_api_call(test_dict, args, openai_key, file_path):
     client = OpenAI(
     api_key=openai_key,  # this is also the default, it can be omitted
     )
-    i = 0
+ 
     for query in tqdm(test_dict):
             # we randomly use a sentence with 0.23 probability
-            p = random.uniform(0, 1)
-            if p >= 0.2:
-                continue
-            i += 1
-            if i == 43:
-                break
+            # p = random.uniform(0, 1)
+            # if p >= 0.2:
+            #     continue
+            # i += 1
+            # if i == 43:
+            #     break
             full_prompt = test_dict[query]['prompt']
             instruction = test_dict[query]['instruction']
 
@@ -54,21 +54,39 @@ def gpt_api_call(test_dict, args, openai_key, file_path):
                 got_result = False
                 while not got_result:
                     try:
-                        result = client.chat.completions.create(
-                            model=args.model_name,
-                            messages=[
-                            {"role": "system", "content": instruction},
-                            {"role": "user", "content": full_prompt}],
-                            max_tokens=200,
-                            n=1,
-                            seed = args.seed
-                            #stop=['\n\n'], # default is none
-                        )
-                        got_result = True
+                        if args.model_name == "gpt-3.5-turbo-1106":
+                            result = client.chat.completions.create(
+                                model=args.model_name,
+                                messages=[
+                                {"role": "system", "content": instruction},
+                                {"role": "user", "content": full_prompt}],
+                                max_tokens=200,
+                                n=1,
+                                seed = args.seed
+                                #stop=['\n\n'], # default is none
+                            )
+                            got_result = True
+                            prediction = result.choices[0].message.content
+                        elif args.model_name == 'gpt-3.5-turbo-instruct':
+                            result = client.completions.create(
+                                model=args.model_name,
+                                prompt = instruction + '\n' + full_prompt,
+                                # messages=[
+                                # {"role": "system", "content": instruction},
+                                # {"role": "user", "content": full_prompt}],
+                                max_tokens=200,
+                                n=1,
+                                seed = args.seed
+                                #stop=['\n\n'], # default is none
+                            )
+                            got_result = True
+                            prediction = result.choices[0].text
+                        else:
+                            raise(f'Not suitable name {args.model_name}')
                     except Exception:
                         sleep(5)
 
-            prediction = result.choices[0].message.content
+            
             test_dict[query]['pred'] = prediction
 
             completion_tokens += result.usage.completion_tokens
@@ -96,13 +114,18 @@ def main(args):
     test_dict = {}
     for test_example in test_examples:
         query = test_example.query
-        
-        rand_demonstrations_ids = create_rand_demonstrations(args.seed, args.num_demonstrations, DEMONSTRATIONS_BETTER_DEM)
+        if args.dem_method=='rand':
+            selected_demonstrations_ids = create_rand_demonstrations(args.seed, args.num_demonstrations, DEMONSTRATIONS_BETTER_DEM)
+        else:
+            #  = [ DEMONSTRATIONS_BETTER_DEM['ex2'], DEMONSTRATIONS_BETTER_DEM['ex4'], DEMONSTRATIONS_BETTER_DEM['ex6'], DEMONSTRATIONS_BETTER_DEM['ex3'] ]
+            selected_demonstrations_ids = [2,4,6,3]
+            random.shuffle(selected_demonstrations_ids)
 
-        demonstations_text = concat_demonstations(args.seed, rand_demonstrations_ids, DEMONSTRATIONS_BETTER_DEM)
+        demonstations_text, demonstrations_ops = concat_demonstations(args.seed, selected_demonstrations_ids, DEMONSTRATIONS_BETTER_DEM)
         demonstations_text = concat_test2prompt(demonstations_text, query, TEST_TEMPLATE_BETTER_DEM)
         demonstations_text = demonstations_text.lstrip()
         test_dict[query] = {}
+        test_dict[query]['demonstrations_ops'] = demonstrations_ops
         test_dict[query]['prompt'] = demonstations_text
         test_dict[query]['instruction'] = INSTRUCTION_BETTER_DEM
         test_dict[query]['model_name'] = args.model_name 
@@ -118,9 +141,10 @@ def main(args):
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='GPT API')
     parser.add_argument('--test_dir', type=str, default="quest_data\\test.jsonl")
-    parser.add_argument('--model_name', type=str, default="gpt-3.5-turbo-1106")
+    parser.add_argument('--model_name', type=str, default="gpt-3.5-turbo-instruct")
+    parser.add_argument('--dem_method', type=str, default="constant") # always the same four
     parser.add_argument('--greedy',action='store_false') # default true now!
     parser.add_argument('--seed',type=int, default=0)
-    parser.add_argument('--num_demonstrations',type=int, default=3)
+    parser.add_argument('--num_demonstrations',type=int, default=4)
     args = parser.parse_args()
     main(args)

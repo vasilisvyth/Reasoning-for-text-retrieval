@@ -1,4 +1,5 @@
 import random
+from templates import demonstration_op_map
 def create_rand_demonstrations(seed, num_demonstrations, demonstrations):
     pool_size = len(demonstrations[seed])
     rand_demonstrations_ids = random.sample(range(pool_size), num_demonstrations) # without repetition
@@ -7,11 +8,13 @@ def create_rand_demonstrations(seed, num_demonstrations, demonstrations):
 def concat_demonstations(seed, rand_demonstrations_ids, demonstrations):
     seed_demonstrations = demonstrations[seed]
     demonstations_txt = ''
+    demostrations_ops = []
     for id in rand_demonstrations_ids:
         ex_key = 'ex'+str(id)
         tmp_demonstration_txt = seed_demonstrations[ex_key]
         demonstations_txt += tmp_demonstration_txt
-    return demonstations_txt
+        demostrations_ops.append(demonstration_op_map[ex_key])
+    return demonstations_txt, demostrations_ops
 
 def concat_test2prompt(demonstations_text, query, test_template):
     demonstations_text += test_template.format(question=query)

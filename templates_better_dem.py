@@ -10,6 +10,7 @@ fiction_books = 'find fiction books'
 doctor_who_books = 'find books based on Doctor Who'
 ```
 
+
 Combine the subquestions to get the original question:
 ```
 ans = books_1998 and fiction_books and doctor_who_books

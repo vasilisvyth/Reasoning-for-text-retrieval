@@ -7,6 +7,17 @@ template2logic = {
 '_ or _ or _':[' or ',' or '],
 '_ that are also both _ and _':[' and ',' and ']
 }
+
+
+check_template2logic = {
+'_ or _':['or'],
+'_ that are not _':['that are not'],
+'_':[], 
+'_ that are also _ but not _': ['and','not'],
+'_ that are also _':['and'],
+'_ or _ or _':['or','or'],
+'_ that are also both _ and _':['and','and']
+}
 # Α
 # Α or B, A or B or C
 # A and B, A and B and C, 
@@ -16,6 +27,10 @@ template2logic = {
 # ex2, ex1, ex5, ex3
 
 # I think it will be easier to generalize from 3 operators to 2 operators than the opposite
+
+# Α, A or B or C, A and B, A and B and not C
+
+
 demonstration_op_map  = {
 'ex1':'A and B and C',
 'ex2':'A',
