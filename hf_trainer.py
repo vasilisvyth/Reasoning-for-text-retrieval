@@ -3,90 +3,92 @@ from torch.utils.data import DataLoader
 from collections import defaultdict
 from tqdm import tqdm
 import torch
-import ir_measures
-from ir_measures import *
+# import ir_measures
+# from ir_measures import *
+from analyze_retriever import calc_mrec_rec
 import os
 from transformers.utils import WEIGHTS_NAME
 import logging
+from quest.common.example_utils import Example
 
-TRAINING_ARGS_NAME = "training_args.bin"
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
 class HFTrainer(Trainer):
-    def __init__(self, *args, eval_collator=None, **kwargs):
+    def __init__(self, *args, eval_collator=None, eval_k, doc_title_map,**kwargs):
         super().__init__(*args, **kwargs)
         self.eval_collator = eval_collator
+        self.eval_k = eval_k
+        self.doc_title_map = doc_title_map
 
-    # def get_eval_dataloader(self, eval_dataset=None):
-    #     if eval_dataset is None:
-    #         eval_dataset = self.eval_dataset
-    #     data_collator = self.eval_collator
-    #     eval_sampler = self._get_eval_sampler(eval_dataset)
-    #     return DataLoader(
-    #         eval_dataset,
-    #         sampler=eval_sampler,
-    #         batch_size=self.args.eval_batch_size,
-    #         collate_fn=data_collator,
-    #         drop_last=self.args.dataloader_drop_last,
-    #         num_workers=self.args.dataloader_num_workers,
-    #         pin_memory=self.args.dataloader_pin_memory,
-    #     )
+    def get_eval_dataloader(self, eval_dataset=None):
+        if eval_dataset is None:
+            eval_dataset = self.eval_dataset
+        data_collator = self.eval_collator
+        eval_sampler = self._get_eval_sampler(eval_dataset)
+        return DataLoader(
+            eval_dataset,
+            sampler=eval_sampler,
+            batch_size=self.args.eval_batch_size,
+            collate_fn=data_collator,
+            drop_last=self.args.dataloader_drop_last,
+            num_workers=self.args.dataloader_num_workers,
+            pin_memory=self.args.dataloader_pin_memory,
+        )
 
     def evaluate(
         self, eval_dataset=None, ignore_keys=None, metric_key_prefix: str = "eval",
     ):
         queries_data_loader = self.get_eval_dataloader(eval_dataset['queries'])
         docs_data_loader = self.get_eval_dataloader(eval_dataset['docs'])
-
+        gold_examples = self.eval_dataset['queries'].gold_examples
         self.model.eval()
         logger.info("Running evaluation")
 
-        all_qids = []
-        all_subqids = []
         all_dids = []
-        all_scores = []
+        all_docs_scores = []
         for batch in tqdm(
             docs_data_loader, desc="Encoding the docs", position=0, leave=True
         ):
-            qids = batch.pop("query_ids")
-            dids = batch.pop("doc_ids")
-            subqids = batch.pop("subq_ids")
-
-            batch_queries = {k: v.to(self.args.device) for k, v in batch['queries'].items()}
-            batch_docs = {k: v.to(self.args.device) for k, v in batch['docs'].items()}
+            dids = batch.pop('ids')
+ 
             with torch.no_grad():
-                scores = self.model.score_pairs(batch_queries, batch_docs)
+                docs_scores = self.model.encode(input_ids = batch["inputs"]['input_ids'], attention_mask = batch["inputs"]['attention_mask']).cpu()
             
-            all_qids.extend(qids.tolist())
             all_dids.extend(dids.tolist())
-            all_scores.extend(scores.tolist())
-            all_subqids.extend(subqids.tolist())
+            all_docs_scores.extend(docs_scores)
 
-        dict_scores = {}
-        for qid, did, score, subqid in zip(all_qids, all_dids, all_scores, all_subqids):
-            if qid not in dict_scores:
-                dict_scores[qid] = {}
-            if did not in dict_scores[qid]:
-                dict_scores[qid][did] = {}
-            dict_scores[qid][did][subqid] = score
-        
-        # alternative
-        # append((doc, score))
+        all_docs_scores = torch.cat(all_docs_scores)
+        all_pred_examples = []
+        for batch in tqdm(
+            queries_data_loader, desc="Encoding the queries", position=0, leave=True
+        ):
+            qids = batch.pop('ids')
+ 
+            with torch.no_grad():
+                queries_scores = self.model.encode(input_ids = batch["inputs"]['input_ids'], attention_mask = batch["inputs"]['attention_mask']).cpu()
+            
+            similarities = torch.matmul(queries_scores, all_docs_scores.t())
+            top_k_values, top_k_indices = torch.topk(similarities, self.eval_k, dim=1, sorted=True)
 
-        # # Sort the documents within each group based on scores
-        # for query in grouped_data:
-        #     grouped_data[query] = sorted(grouped_data[query], key=lambda x: x[1])
+    
+            # Creating examples and adding them to the list
+            for i, qid in enumerate(qids.tolist()):
+                query_text = eval_dataset['queries'].dict_query_ids_queries[qid]
+                doc_texts = [self.doc_title_map[all_dids[index]] for index in top_k_indices[i].tolist()]
+                scores = [top_k_values[i].tolist()]
+                # scores
+
+                example = Example(query=query_text, docs=doc_texts, scores=scores)
+                all_pred_examples.append(example)
+
+
+        avg_recall_vals, avg_mrecall_vals = calc_mrec_rec(gold_examples, all_pred_examples)
 
         self.model.train()
-        # qrels = (
-        #     eval_dataset.qrels if eval_dataset is not None else self.eval_dataset.qrels
-        # )
-        # metrics = ir_measures.calc_aggregate(
-        #     [nDCG @ 10, MRR @ 10, R @ 1000], qrels, rerank_run
-        # )
-        metrics = {metric_key_prefix + "_" + str(k): v for k, v in metrics.items()}
+  
+        metrics = {metric_key_prefix + "_" + f'avg_rec@{self.eval_k}': avg_recall_vals[self.eval_k]}
         metrics["epoch"] = self.state.epoch
         self.log(metrics)
         return metrics
@@ -105,7 +107,56 @@ class HFTrainer(Trainer):
         os.makedirs(output_dir, exist_ok=True)
         logger.info(f"Saving model checkpoint to {output_dir}")
         self.model.save_pretrained(output_dir, state_dict=state_dict)
-        if self.data_collator.tokenizer is not None:
-            self.data_collator.tokenizer.save_pretrained(output_dir)
-        # Good practice: save your training arguments together with the trained model
-        torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
+        # if self.data_collator.tokenizer is not None:
+        #     self.data_collator.tokenizer.save_pretrained(output_dir)
+        # # Good practice: save your training arguments together with the trained model
+        # torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
+    
+
+    def _maybe_log_save_evaluate(self, tr_loss, model, trial, epoch, ignore_keys_for_eval):
+        if self.control.should_log:
+            if is_torch_tpu_available():
+                xm.mark_step()
+
+            logs: Dict[str, float] = {}
+
+            # all_gather + mean() to get average loss over all processes
+            tr_loss_scalar = self._nested_gather(tr_loss).mean().item()
+
+            # reset tr_loss to zero
+            tr_loss -= tr_loss
+
+            logs["loss"] = round(tr_loss_scalar / (self.state.global_step - self._globalstep_last_logged), 4)
+            logs["learning_rate"] = self._get_learning_rate()
+
+            self._total_loss_scalar += tr_loss_scalar
+            self._globalstep_last_logged = self.state.global_step
+            self.store_flos()
+
+            self.log(logs)
+
+        metrics = None
+        if self.control.should_evaluate:
+            if isinstance(self.eval_dataset, dict):
+                metrics = {}
+                for eval_dataset_name, eval_dataset in self.eval_dataset.items():
+                    dataset_metrics = self.evaluate(
+                        eval_dataset=eval_dataset,
+                        ignore_keys=ignore_keys_for_eval,
+                        metric_key_prefix=f"eval_{eval_dataset_name}",
+                    )
+                    metrics.update(dataset_metrics)
+            else:
+                metrics = self.evaluate(ignore_keys=ignore_keys_for_eval)
+            self._report_to_hp_search(trial, self.state.global_step, metrics)
+
+            # Run delayed LR scheduler now that metrics are populated
+            if isinstance(self.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                metric_to_check = self.args.metric_for_best_model
+                if not metric_to_check.startswith("eval_"):
+                    metric_to_check = f"eval_{metric_to_check}"
+                self.lr_scheduler.step(metrics[metric_to_check])
+
+        if self.control.should_save:
+            self._save_checkpoint(model, trial, metrics=metrics)
+            self.control = self.callback_handler.on_save(self.args, self.state, self.control)
