@@ -29,7 +29,7 @@ def main(args):
     
     # load model and tokenizer
     model = DenseBiEncoder(args.pretrained, args.scale_logits, args.right_loss)
-    tokenizer = AutoTokenizer.from_pretrained(args.pretrained)
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     
     # Load training and validation examples
     path_train_aug =os.path.join(args.data_dir,'train_aug.jsonl')
@@ -71,11 +71,28 @@ def main(args):
         val_dict_query_ids_queries.update(val_dict_query_ids_queries_extra)
         examples_val.extend(examples_val_extra)
 
+
     # if we don't want to use complex queries then remove them
     if not args.use_complex_queries:
         print(f'Val set Total queries before removing complex queries: {len(val_dict_query_ids_queries)}')
         remove_complex_queries(examples_val, val_dict_query_ids_queries)
         print(f'Val set Total queries after removing complex queries: {len(val_dict_query_ids_queries)}')
+
+
+    # # dummy added
+    # from analyze_retriever import calc_mrec_rec
+    # import random
+    # from quest.common.example_utils import Example
+    # pred_examples = []
+    # num_docs = len(doc_title_map)
+    # for ex in examples_val:
+    #     query = ex.query
+    #     docs = [doc_title_map[random.randint(0,num_docs)] for i in range(111)]
+    #     pred_example = Example(query=query, docs=docs)
+    #     pred_examples.append(pred_example)
+
+    # # pred_examples = example_utils.read_examples(FLAGS.pred)
+    # calc_mrec_rec(examples_val, pred_examples)
 
     # create dataset for training
     train_pair_dataset = PairDataset(train_query_ids, train_doc_ids, train_queries, train_docs,examples_train_aug)
@@ -125,6 +142,7 @@ def main(args):
         # lr_scheduler_type='linear',
         report_to="wandb",
         run_name=args.wb_run_name,  # name of the W&B run (optional)
+        dataloader_num_workers = args.dataloader_num_workers,
         # auto_find_batch_size = True
         logging_steps=10  # how often to log to W&B
     )
@@ -158,9 +176,15 @@ def main(args):
     # train_dataloader = trainer.get_train_dataloader()
     # for batch in train_dataloader:
     #     a=1
-
-    trainer.train()
-    trainer.save_model()
+    if args.do_train:
+        trainer.train()
+        trainer.save_model()
+    
+    if args.do_only_eval:
+        print('-'*16)
+        print('DO ONLY EVALUATION')
+        trainer.evaluate(eval_dataset)
+        print('-'*16)
     #wandb.finish() # for colab only
 
 if __name__=='__main__':
@@ -168,6 +192,12 @@ if __name__=='__main__':
 
     parser.add_argument(
         "--pretrained",
+        type=str,
+        default="google/t5-v1_1-small",
+        help="Pretrained checkpoint for the base model",
+    )
+    parser.add_argument(
+        "--tokenizer",
         type=str,
         default="google/t5-v1_1-small",
         help="Pretrained checkpoint for the base model",
@@ -205,7 +235,10 @@ if __name__=='__main__':
     ) # default is false
     parser.add_argument(
         "--lr", type=float, default=0.001, help="Learning rate for training"
-    )
+    ) 
+    parser.add_argument(
+        "--dataloader_num_workers", type=int, default=0, help="number of workers"
+    ) 
     parser.add_argument(
         "--use_complex_queries", action='store_true', help='whether to calculate the right'
     ) # default false
@@ -216,16 +249,22 @@ if __name__=='__main__':
         "--fp16", action='store_true', help='whether to use fp16 '
     ) # default false
     parser.add_argument(
-        "--k_for_eval", type=int, default=100, help="top k used to select the best model using a Eval_metric@k"
+        "--do_train", action='store_true', help='whether to do training '
+    ) # default false
+    parser.add_argument(
+        "--do_only_eval", action='store_true', help='whether to do evaluation ONLY'
+    ) # default false
+    parser.add_argument(
+        "--k_for_eval", type=int, default=20, help="top k used to select the best model using a Eval_metric@k"
     )
     parser.add_argument(
         "--data_dir", type=str, default='quest_data', help="The data folder where you have the data"
     )
     parser.add_argument(
-        "--save_steps", type=int, default=100, help="Number of updates steps before two checkpoint saves"
+        "--save_steps", type=int, default=2, help="Number of updates steps before two checkpoint saves"
     )
     parser.add_argument(
-        "--eval_steps", type=int, default=100, help="evaluate every"
+        "--eval_steps", type=int, default=2, help="evaluate every"
     )
 
     # save_steps=100, #Number of updates steps before two checkpoint saves

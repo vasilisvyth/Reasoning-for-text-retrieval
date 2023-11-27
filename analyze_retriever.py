@@ -44,7 +44,7 @@ def calc_mrec_rec(gold_examples, pred_examples):
   num_examples = 0
   # Dictionary mapping mrecall k value to number of examples where predicted
   # set is superset of gold set.
-  mrecall_vals = {k: [] for k in K_VALS}
+  mrecall_vals = {k: [] for k in K_VALS} # for every k keep a list where every element in the list represents the score of the respective example
   # List of recall for each example.
   recall_vals = {k: [] for k in K_VALS}
 
@@ -58,35 +58,40 @@ def calc_mrec_rec(gold_examples, pred_examples):
     if not gold_example.docs:
       raise ValueError("Example has 0 docs.")
 
-    if verbose:
-      print("\n\nProcessing example %s: `%s`" % (idx, gold_example))
-      num_examples += 1
+    
+    if gold_example.query in query_to_pred_example:
 
-    pred_example = query_to_pred_example[gold_example.query]
-
-    for k in K_VALS:
       if verbose:
-        print("Evaluating MRecall@%s" % k)
-      predicted_docs = set(pred_example.docs[:k])
-      gold_docs = set(gold_example.docs)
-      if gold_docs.issubset(predicted_docs):
+        print("\n\nProcessing example %s: `%s`" % (idx, gold_example))
+        num_examples += 1
+
+      pred_example = query_to_pred_example[gold_example.query]
+
+      for k in K_VALS:
         if verbose:
-          print("Contains all docs!")
-        mrecall_vals[k].append(1.0)
-      else:
-        mrecall_vals[k].append(0.0)
+          print("Evaluating MRecall@%s" % k)
+        predicted_docs = set(pred_example.docs[:k])
+        gold_docs = set(gold_example.docs)
+        if gold_docs.issubset(predicted_docs):
+          if verbose:
+            print("Contains all docs!")
+          mrecall_vals[k].append(1.0)
+        else:
+          mrecall_vals[k].append(0.0)
 
-      # Compute recall.
-      covered_docs = gold_docs.intersection(predicted_docs)
-      recall = float(len(covered_docs)) / len(gold_docs)
-      recall_vals[k].append(recall)
+        # Compute recall.
+        covered_docs = gold_docs.intersection(predicted_docs)
+        recall = float(len(covered_docs)) / len(gold_docs)
+        recall_vals[k].append(recall)
 
-      # Print debugging.
-      extra_docs = predicted_docs.difference(gold_docs)
-      missing_docs = gold_docs.difference(predicted_docs)
-      if verbose:
-        print("Extra docs: %s" % extra_docs)
-        print("Missing docs: %s" % missing_docs)
+        # Print debugging.
+        extra_docs = predicted_docs.difference(gold_docs)
+        missing_docs = gold_docs.difference(predicted_docs)
+        if verbose:
+          print("Extra docs: %s" % extra_docs)
+          print("Missing docs: %s" % missing_docs)
+    else:
+      print('not in dict')
 
   print("num_examples: %s" % num_examples)
 
@@ -94,21 +99,44 @@ def calc_mrec_rec(gold_examples, pred_examples):
   avg_recall_vals = {k:0  for k in K_VALS}
   for k in K_VALS:
     print("MRecall@%s" % k)
+    print(gold_examples[0])
     mrecall_avg_all  = eval_utils.print_avg(gold_examples, mrecall_vals[k])
     mrecall_avg_by_template  = eval_utils.print_avg_by_template(gold_examples, mrecall_vals[k])
     print("Avg. Recall@%s" % k)
     recall_avg_all  = eval_utils.print_avg(gold_examples, recall_vals[k])
     recall_avg_by_template  = eval_utils.print_avg_by_template(gold_examples, recall_vals[k])
-    avg_mrecall_vals[k] = mrecall_avg_all
-    avg_recall_vals[k] = recall_avg_all
+    print('!'*17)
+    print('returned')
+    print('recall_avg_all', recall_avg_all)
+    print('mrecall_avg_all, mrecall_avg_all')
+    avg_recall_vals[k] = recall_avg_all['all']
+    avg_mrecall_vals[k] = mrecall_avg_all['all'] # I swapped order
     
   return avg_recall_vals, avg_mrecall_vals
 
 
 def main(unused_argv):
-  gold_examples = example_utils.read_examples(FLAGS.gold)
-  pred_examples = example_utils.read_examples(FLAGS.pred)
-  calc_mrec_rec(gold_examples, pred_examples)
+  a=1
+  # path_doc_text_list = os.path.join('quest_data','doc_text_list.pickle')
+  # path_doc_title_map = os.path.join('quest_data','doc_title_map.tsv')
+  # _, doc_title_map = read_docs(path_doc_text_list, path_doc_title_map)
+
+  # path_val_query_ids_queries = os.path.join('quest_data','val_query_ids_queries.tsv')
+  # path_val_query_ids_doc_ids = os.path.join('quest_data','val_query_ids_doc_ids.tsv')
+
+  # val_dict_query_ids_queries, _ = read_queries(path_val_query_ids_queries, path_val_query_ids_doc_ids)
+  # gold_path = os.path.join('quest_data','val.jsonl')
+  # gold_examples = example_utils.read_examples(gold_path)
+  # pred_examples = []
+  # num_docs = len(doc_title_map)
+  # for ex in gold_examples:
+  #   query = ex.query
+  #   docs = [doc_title_map[random.randint(0,num_docs)] for i in range(5)]
+  #   pred_example = Example(query=query, docs=docs)
+  #   pred_examples.append(pred_example)
+
+  # # pred_examples = example_utils.read_examples(FLAGS.pred)
+  # calc_mrec_rec(gold_examples, pred_examples)
   
 
 

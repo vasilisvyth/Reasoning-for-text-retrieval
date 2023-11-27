@@ -11,6 +11,7 @@ from transformers.utils import WEIGHTS_NAME
 import logging
 from quest.common.example_utils import Example
 from typing import Dict
+from safetensors.torch import load_file
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -57,45 +58,62 @@ class HFTrainer(Trainer):
         for batch in tqdm(
             docs_data_loader, desc="Encoding the docs", position=0, leave=True
         ):
-   
+            # i+=1
+            # if i > 20:
+            #     break
             dids = batch.pop('ids')
             in_ids =  batch["inputs"]['input_ids'].to(device)
             att_mask = batch["inputs"]['attention_mask'].to(device)
             # if self.fp_16:
-            with torch.cuda.amp.autocast(), torch.no_grad(): # scores are float32
+            with torch.no_grad(): # scores are float32 torch.cuda.amp.autocast(),
                 docs_scores = self.model.encode(input_ids =in_ids, attention_mask = att_mask).cpu()
+            # docs_scores = torch.rand(len(dids))
             
             all_dids.extend(dids)
             all_docs_scores.append(docs_scores)
             
 
         all_docs_scores = torch.cat(all_docs_scores,dim=0)
-        all_pred_examples = []
 
-        for batch in tqdm(
+        torch.save(all_docs_scores, 'docs_finetuned_4000.pt')
+
+        all_pred_examples = []
+    
+        for batch_idx, batch in enumerate(tqdm(
             queries_data_loader, desc="Encoding the queries", position=0, leave=True
-        ):
+        )):
        
             qids = batch.pop('ids')
-            in_ids =  batch["inputs"]['input_ids'].to(device)
-            att_mask = batch["inputs"]['attention_mask'].to(device)
-            with torch.cuda.amp.autocast(), torch.no_grad():
+
+            in_ids =  batch["inputs"]['input_ids']
+            in_ids = in_ids.to(device)
+            
+            att_mask = batch["inputs"]['attention_mask']
+            att_mask = att_mask.to(device)
+            with torch.no_grad(): #torch.cuda.amp.autocast(), 
                 queries_scores = self.model.encode(input_ids =in_ids, attention_mask = att_mask).cpu()
+
+            # queries_scores = torch.rand(len(dids))
             
             similarities = torch.matmul(queries_scores, all_docs_scores.t())
             top_k_values, top_k_indices = torch.topk(similarities, self.eval_k, dim=1, sorted=True)
-
+           
     
             # Creating examples and adding them to the list
             for i, qid in enumerate(qids):
-                query_text = eval_dataset['queries'].dict_query_ids_queries[qid]
-                doc_texts = [self.doc_title_map[all_dids[index]] for index in top_k_indices[i].tolist()]
+                query_text = eval_dataset['queries'].dict_query_ids_queries[qid] # correct query
+                pred_docs_ids = [all_dids[index] for index in top_k_indices[i].tolist()]
+                doc_texts = [self.doc_title_map[pr_id] for pr_id in pred_docs_ids]
                 scores = top_k_values[i].tolist()
+
+                if batch_idx <= 3 and i <4:
+                    print('scores ',scores[:10])
+                    print('doc_texts', doc_texts)
                 # scores
 
                 example = Example(query=query_text, docs=doc_texts, scores=scores)
                 all_pred_examples.append(example)
-            
+            # break
 
         avg_recall_vals, avg_mrecall_vals = calc_mrec_rec(gold_examples, all_pred_examples)
 
@@ -110,8 +128,8 @@ class HFTrainer(Trainer):
         logger.info(
             f"Loading best model from {self.state.best_model_checkpoint} (score: {self.state.best_metric})."
         )
-        best_model_path = os.path.join(self.state.best_model_checkpoint, WEIGHTS_NAME)
-        state_dict = torch.load(best_model_path, map_location="cpu")
+        best_model_path = os.path.join(self.state.best_model_checkpoint, 'model.safetensors')
+        state_dict = load_file(best_model_path)#torch.load(best_model_path, map_location="cpu")
         self.model.model.load_state_dict(state_dict, False)
 
     def _save(self, output_dir: str = None, state_dict=None):

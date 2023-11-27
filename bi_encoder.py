@@ -15,7 +15,10 @@ class DenseBiEncoder(nn.Module):
             self.model = AutoModel.from_pretrained(model_name_or_dir)
         self.scale_logits, self.right_loss = scale_logits, right_loss
         self.loss = nn.CrossEntropyLoss()
-        ## Count the number of parameters num_parameters = sum(p.numel() for p in model.parameters()) print(f"Number of parameters in {model_name}: {num_parameters}")
+        ## Count the number of parameters 
+        num_parameters = sum(p.numel() for p in self.model.parameters())
+        print(f"Number of parameters in {model_name_or_dir}: {num_parameters}")
+        
     def encode(self, input_ids, attention_mask, **kwargs):
 
         hidden_states = self.model(input_ids, attention_mask,**kwargs).last_hidden_state # [batch_size, max_sentence_length, hidden_dim]
