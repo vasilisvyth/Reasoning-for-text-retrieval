@@ -10,6 +10,7 @@ import random
 from quest.common import example_utils
 from templates import TEST_TEMPLATE, INSTRUCTION, DEMONSTRATIONS
 from templates_better_dem import INSTRUCTION_BETTER_DEM, DEMONSTRATIONS_BETTER_DEM, TEST_TEMPLATE_BETTER_DEM
+from templates_docs_anon_quest import INSTRUCTION_DOCS_ANON, DEMONSTRATIONS_DOCS_ANON, TEST_TEMPLATE_DOCS_ANON
 from template_construction import create_rand_demonstrations, concat_demonstations, concat_test2prompt
 import json
 import pprint
@@ -115,19 +116,19 @@ def main(args):
     for test_example in test_examples:
         query = test_example.query
         if args.dem_method=='rand':
-            selected_demonstrations_ids = create_rand_demonstrations(args.seed, args.num_demonstrations, DEMONSTRATIONS_BETTER_DEM)
+            selected_demonstrations_ids = create_rand_demonstrations(args.seed, args.num_demonstrations, DEMONSTRATIONS_DOCS_ANON)
         else:
             #  = [ DEMONSTRATIONS_BETTER_DEM['ex2'], DEMONSTRATIONS_BETTER_DEM['ex4'], DEMONSTRATIONS_BETTER_DEM['ex6'], DEMONSTRATIONS_BETTER_DEM['ex3'] ]
             selected_demonstrations_ids = [2,4,6,3]
             random.shuffle(selected_demonstrations_ids)
 
-        demonstations_text, demonstrations_ops = concat_demonstations(args.seed, selected_demonstrations_ids, DEMONSTRATIONS_BETTER_DEM)
-        demonstations_text = concat_test2prompt(demonstations_text, query, TEST_TEMPLATE_BETTER_DEM)
+        demonstations_text, demonstrations_ops = concat_demonstations(args.seed, selected_demonstrations_ids, DEMONSTRATIONS_DOCS_ANON)
+        demonstations_text = concat_test2prompt(demonstations_text, query, TEST_TEMPLATE_DOCS_ANON)
         demonstations_text = demonstations_text.lstrip()
         test_dict[query] = {}
         test_dict[query]['demonstrations_ops'] = demonstrations_ops
         test_dict[query]['prompt'] = demonstations_text
-        test_dict[query]['instruction'] = INSTRUCTION_BETTER_DEM
+        test_dict[query]['instruction'] = INSTRUCTION_DOCS_ANON
         test_dict[query]['model_name'] = args.model_name 
         test_dict[query]['template'] = test_example.metadata.template
         test_dict[query]['domain'] = test_example.metadata.domain
