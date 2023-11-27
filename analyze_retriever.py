@@ -27,20 +27,20 @@ flags.DEFINE_string("gold", "", "Examples jsonl file with gold document set.")
 
 flags.DEFINE_string("pred", "", "Examples jsonl file with predicted documents.")
 
-flags.DEFINE_integer("offset", 0, "Start index for examples to process.")
+offset = ''
+limit = ''
+verbose = False
+# flags.DEFINE_integer("offset", 0, "Start index for examples to process.")
 
-flags.DEFINE_integer("limit", 0, "End index for examples to process if >0.")
+# flags.DEFINE_integer("limit", 0, "End index for examples to process if >0.")
 
-flags.DEFINE_bool("verbose", False, "Whether to print out verbose debugging.")
+# flags.DEFINE_bool("verbose", False, "Whether to print out verbose debugging.")
 
 # Values of k to use to compute MRecall@k.
 K_VALS = [20, 50, 100, 1000]
 
-
-def main(unused_argv):
-  gold_examples = example_utils.read_examples(FLAGS.gold)
-  pred_examples = example_utils.read_examples(FLAGS.pred)
-
+def calc_mrec_rec(gold_examples, pred_examples):
+  #! todo return for training
   num_examples = 0
   # Dictionary mapping mrecall k value to number of examples where predicted
   # set is superset of gold set.
@@ -50,27 +50,27 @@ def main(unused_argv):
 
   query_to_pred_example = {ex.query: ex for ex in pred_examples}
   for idx, gold_example in enumerate(gold_examples):
-    if FLAGS.offset and idx < FLAGS.offset:
+    if offset and idx < offset:
       continue
-    if FLAGS.limit and idx >= FLAGS.limit:
+    if limit and idx >= limit:
       break
 
     if not gold_example.docs:
       raise ValueError("Example has 0 docs.")
 
-    if FLAGS.verbose:
+    if verbose:
       print("\n\nProcessing example %s: `%s`" % (idx, gold_example))
       num_examples += 1
 
     pred_example = query_to_pred_example[gold_example.query]
 
     for k in K_VALS:
-      if FLAGS.verbose:
+      if verbose:
         print("Evaluating MRecall@%s" % k)
       predicted_docs = set(pred_example.docs[:k])
       gold_docs = set(gold_example.docs)
       if gold_docs.issubset(predicted_docs):
-        if FLAGS.verbose:
+        if verbose:
           print("Contains all docs!")
         mrecall_vals[k].append(1.0)
       else:
@@ -84,19 +84,32 @@ def main(unused_argv):
       # Print debugging.
       extra_docs = predicted_docs.difference(gold_docs)
       missing_docs = gold_docs.difference(predicted_docs)
-      if FLAGS.verbose:
+      if verbose:
         print("Extra docs: %s" % extra_docs)
         print("Missing docs: %s" % missing_docs)
 
   print("num_examples: %s" % num_examples)
 
+  avg_mrecall_vals = {k:0  for k in K_VALS}
+  avg_recall_vals = {k:0  for k in K_VALS}
   for k in K_VALS:
     print("MRecall@%s" % k)
-    eval_utils.print_avg(gold_examples, mrecall_vals[k])
-    eval_utils.print_avg_by_template(gold_examples, mrecall_vals[k])
+    mrecall_avg_all  = eval_utils.print_avg(gold_examples, mrecall_vals[k])
+    mrecall_avg_by_template  = eval_utils.print_avg_by_template(gold_examples, mrecall_vals[k])
     print("Avg. Recall@%s" % k)
-    eval_utils.print_avg(gold_examples, recall_vals[k])
-    eval_utils.print_avg_by_template(gold_examples, recall_vals[k])
+    recall_avg_all  = eval_utils.print_avg(gold_examples, recall_vals[k])
+    recall_avg_by_template  = eval_utils.print_avg_by_template(gold_examples, recall_vals[k])
+    avg_mrecall_vals[k] = mrecall_avg_all
+    avg_recall_vals[k] = recall_avg_all
+    
+  return avg_recall_vals, avg_mrecall_vals
+
+
+def main(unused_argv):
+  gold_examples = example_utils.read_examples(FLAGS.gold)
+  pred_examples = example_utils.read_examples(FLAGS.pred)
+  calc_mrec_rec(gold_examples, pred_examples)
+  
 
 
 if __name__ == "__main__":

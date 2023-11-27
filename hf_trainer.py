@@ -10,22 +10,24 @@ import os
 from transformers.utils import WEIGHTS_NAME
 import logging
 from quest.common.example_utils import Example
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
 class HFTrainer(Trainer):
-    def __init__(self, *args, eval_collator=None, eval_k, doc_title_map,**kwargs):
+    def __init__(self, *args, eval_collator=None, eval_k, doc_title_map, fp_16,**kwargs):
         super().__init__(*args, **kwargs)
         self.eval_collator = eval_collator
         self.eval_k = eval_k
         self.doc_title_map = doc_title_map
+        self.fp_16 = fp_16
 
-    def get_eval_dataloader(self, eval_dataset=None):
+    def get_eval_dataloader(self, eval_dataset=None, str_type = None):
         if eval_dataset is None:
             eval_dataset = self.eval_dataset
-        data_collator = self.eval_collator
+        data_collator = self.eval_collator[str_type]
         eval_sampler = self._get_eval_sampler(eval_dataset)
         return DataLoader(
             eval_dataset,
@@ -34,55 +36,66 @@ class HFTrainer(Trainer):
             collate_fn=data_collator,
             drop_last=self.args.dataloader_drop_last,
             num_workers=self.args.dataloader_num_workers,
-            pin_memory=self.args.dataloader_pin_memory,
+            pin_memory=self.args.dataloader_pin_memory
         )
 
     def evaluate(
         self, eval_dataset=None, ignore_keys=None, metric_key_prefix: str = "eval",
     ):
-        queries_data_loader = self.get_eval_dataloader(eval_dataset['queries'])
-        docs_data_loader = self.get_eval_dataloader(eval_dataset['docs'])
+        queries_data_loader = self.get_eval_dataloader(eval_dataset['queries'],'queries')
+        docs_data_loader = self.get_eval_dataloader(eval_dataset['docs'],'docs')
         gold_examples = self.eval_dataset['queries'].gold_examples
         self.model.eval()
         logger.info("Running evaluation")
 
+        device = next(self.model.parameters()).device
+        print(f'device {device}')
+
         all_dids = []
         all_docs_scores = []
+        i=0
         for batch in tqdm(
             docs_data_loader, desc="Encoding the docs", position=0, leave=True
         ):
+   
             dids = batch.pop('ids')
- 
-            with torch.no_grad():
-                docs_scores = self.model.encode(input_ids = batch["inputs"]['input_ids'], attention_mask = batch["inputs"]['attention_mask']).cpu()
+            in_ids =  batch["inputs"]['input_ids'].to(device)
+            att_mask = batch["inputs"]['attention_mask'].to(device)
+            # if self.fp_16:
+            with torch.cuda.amp.autocast(), torch.no_grad(): # scores are float32
+                docs_scores = self.model.encode(input_ids =in_ids, attention_mask = att_mask).cpu()
             
-            all_dids.extend(dids.tolist())
-            all_docs_scores.extend(docs_scores)
+            all_dids.extend(dids)
+            all_docs_scores.append(docs_scores)
+            
 
-        all_docs_scores = torch.cat(all_docs_scores)
+        all_docs_scores = torch.cat(all_docs_scores,dim=0)
         all_pred_examples = []
+
         for batch in tqdm(
             queries_data_loader, desc="Encoding the queries", position=0, leave=True
         ):
+       
             qids = batch.pop('ids')
- 
-            with torch.no_grad():
-                queries_scores = self.model.encode(input_ids = batch["inputs"]['input_ids'], attention_mask = batch["inputs"]['attention_mask']).cpu()
+            in_ids =  batch["inputs"]['input_ids'].to(device)
+            att_mask = batch["inputs"]['attention_mask'].to(device)
+            with torch.cuda.amp.autocast(), torch.no_grad():
+                queries_scores = self.model.encode(input_ids =in_ids, attention_mask = att_mask).cpu()
             
             similarities = torch.matmul(queries_scores, all_docs_scores.t())
             top_k_values, top_k_indices = torch.topk(similarities, self.eval_k, dim=1, sorted=True)
 
     
             # Creating examples and adding them to the list
-            for i, qid in enumerate(qids.tolist()):
+            for i, qid in enumerate(qids):
                 query_text = eval_dataset['queries'].dict_query_ids_queries[qid]
                 doc_texts = [self.doc_title_map[all_dids[index]] for index in top_k_indices[i].tolist()]
-                scores = [top_k_values[i].tolist()]
+                scores = top_k_values[i].tolist()
                 # scores
 
                 example = Example(query=query_text, docs=doc_texts, scores=scores)
                 all_pred_examples.append(example)
-
+            
 
         avg_recall_vals, avg_mrecall_vals = calc_mrec_rec(gold_examples, all_pred_examples)
 
@@ -108,15 +121,15 @@ class HFTrainer(Trainer):
         logger.info(f"Saving model checkpoint to {output_dir}")
         self.model.save_pretrained(output_dir, state_dict=state_dict)
         # if self.data_collator.tokenizer is not None:
-        #     self.data_collator.tokenizer.save_pretrained(output_dir)
-        # # Good practice: save your training arguments together with the trained model
-        # torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
+           
+        # Good practice: save your training arguments together with the trained model
+        torch.save(self.args, os.path.join(output_dir, 'my_args.bin'))
     
 
     def _maybe_log_save_evaluate(self, tr_loss, model, trial, epoch, ignore_keys_for_eval):
         if self.control.should_log:
-            if is_torch_tpu_available():
-                xm.mark_step()
+            # if is_torch_tpu_available():
+            #     xm.mark_step()
 
             logs: Dict[str, float] = {}
 
@@ -139,13 +152,12 @@ class HFTrainer(Trainer):
         if self.control.should_evaluate:
             if isinstance(self.eval_dataset, dict):
                 metrics = {}
-                for eval_dataset_name, eval_dataset in self.eval_dataset.items():
-                    dataset_metrics = self.evaluate(
-                        eval_dataset=eval_dataset,
-                        ignore_keys=ignore_keys_for_eval,
-                        metric_key_prefix=f"eval_{eval_dataset_name}",
-                    )
-                    metrics.update(dataset_metrics)
+                # for eval_dataset_name, eval_dataset in self.eval_dataset.items():
+                dataset_metrics = self.evaluate(
+                    eval_dataset=self.eval_dataset,
+                    ignore_keys=ignore_keys_for_eval
+                )
+                metrics.update(dataset_metrics)
             else:
                 metrics = self.evaluate(ignore_keys=ignore_keys_for_eval)
             self._report_to_hp_search(trial, self.state.global_step, metrics)

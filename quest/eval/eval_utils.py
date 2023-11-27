@@ -35,10 +35,13 @@ def print_avg_by_key(examples, metrics, key_fn):
   }
   for key, val in key_to_avg.items():
     print("%s (%s): %s" % (key, len(key_to_metrics[key]), val))
-
+  return key_to_avg
 
 def print_avg_by_template(examples, metrics):
   """Prints results partitioned by template."""
+  '''
+  I: metrics are list of precision (or recall or f1) scores for every example. Maybe it's a list since we have multiple docs
+  '''
   key_fn = lambda example: example.metadata.template
   return print_avg_by_key(examples, metrics, key_fn)
 
