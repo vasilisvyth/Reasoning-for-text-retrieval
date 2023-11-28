@@ -21,11 +21,11 @@ from quest.common import example_utils
 from quest.eval import eval_utils
 
 
-FLAGS = flags.FLAGS
+# FLAGS = flags.FLAGS
 
-flags.DEFINE_string("gold", "", "Examples jsonl file with gold document set.")
+# flags.DEFINE_string("gold", "", "Examples jsonl file with gold document set.")
 
-flags.DEFINE_string("pred", "", "Examples jsonl file with predicted documents.")
+# flags.DEFINE_string("pred", "", "Examples jsonl file with predicted documents.")
 
 offset = ''
 limit = ''
@@ -99,16 +99,16 @@ def calc_mrec_rec(gold_examples, pred_examples):
   avg_recall_vals = {k:0  for k in K_VALS}
   for k in K_VALS:
     print("MRecall@%s" % k)
-    print(gold_examples[0])
+
     mrecall_avg_all  = eval_utils.print_avg(gold_examples, mrecall_vals[k])
     mrecall_avg_by_template  = eval_utils.print_avg_by_template(gold_examples, mrecall_vals[k])
     print("Avg. Recall@%s" % k)
     recall_avg_all  = eval_utils.print_avg(gold_examples, recall_vals[k])
     recall_avg_by_template  = eval_utils.print_avg_by_template(gold_examples, recall_vals[k])
-    print('!'*17)
-    print('returned')
-    print('recall_avg_all', recall_avg_all)
-    print('mrecall_avg_all, mrecall_avg_all')
+    # print('!'*17)
+    # print('returned')
+    # print('recall_avg_all', recall_avg_all)
+    # print('mrecall_avg_all', mrecall_avg_all)
     avg_recall_vals[k] = recall_avg_all['all']
     avg_mrecall_vals[k] = mrecall_avg_all['all'] # I swapped order
     

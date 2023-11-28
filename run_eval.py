@@ -21,17 +21,15 @@ from quest.common import example_utils
 from quest.eval import eval_utils
 
 
-FLAGS = flags.FLAGS
+# FLAGS = flags.FLAGS
 
-flags.DEFINE_string("gold", "", "Examples jsonl file with gold document set.")
+# flags.DEFINE_string("gold", "", "Examples jsonl file with gold document set.")
 
-flags.DEFINE_string("pred", "", "Examples jsonl file with predicted documents.")
+# flags.DEFINE_string("pred", "", "Examples jsonl file with predicted documents.")
 
 
-def main(unused_argv):
-  gold_examples = example_utils.read_examples(FLAGS.gold)
-  pred_examples = example_utils.read_examples(FLAGS.pred)
-
+def calc_f1_pr_rec(gold_examples, pred_examples):
+  #! todo return for training
   # List of values for average precision, recall, and f1.
   p_vals = []
   r_vals = []
@@ -63,14 +61,21 @@ def main(unused_argv):
     f1_vals.append(f1)
 
   print("Avg. Precision")
-  eval_utils.print_avg(gold_examples, p_vals)
-  eval_utils.print_avg_by_template(gold_examples, p_vals)
+  avg_prec =eval_utils.print_avg(gold_examples, p_vals)
+  template_avg_prec = eval_utils.print_avg_by_template(gold_examples, p_vals)
   print("Avg. Recall")
-  eval_utils.print_avg(gold_examples, r_vals)
-  eval_utils.print_avg_by_template(gold_examples, r_vals)
+  avg_rec = eval_utils.print_avg(gold_examples, r_vals)
+  template_avg_rec = eval_utils.print_avg_by_template(gold_examples, r_vals)
   print("Avg. F1")
-  eval_utils.print_avg(gold_examples, f1_vals)
-  eval_utils.print_avg_by_template(gold_examples, f1_vals)
+  avg_f1 = eval_utils.print_avg(gold_examples, f1_vals)
+  template_avg_f1 = eval_utils.print_avg_by_template(gold_examples, f1_vals)
+
+
+def main(unused_argv):
+  gold_examples = example_utils.read_examples(FLAGS.gold)
+  pred_examples = example_utils.read_examples(FLAGS.pred)
+
+  calc_f1_pr_rec(gold_examples, pred_examples)
 
 
 if __name__ == "__main__":

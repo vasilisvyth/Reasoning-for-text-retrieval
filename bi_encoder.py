@@ -4,7 +4,7 @@ from transformers import AutoModel, T5EncoderModel
 
 
 class DenseBiEncoder(nn.Module):
-
+    _keys_to_ignore_on_save = None #useful when loading a model
     def __init__(self, model_name_or_dir, scale_logits, right_loss) -> None:
         super().__init__()
         if 't5' in model_name_or_dir:

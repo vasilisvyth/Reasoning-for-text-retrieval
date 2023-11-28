@@ -3,7 +3,7 @@ from quest.common import tsv_utils
 import argparse
 import os
 import torch
-from transformers import AutoTokenizer, TrainingArguments, Trainer
+from transformers import AutoTokenizer, TrainingArguments, Trainer, EarlyStoppingCallback
 from transformers.optimization import AdafactorSchedule
 from pair_dataset import PairDataset
 from pair_collator import BiEncoderPairCollator
@@ -15,6 +15,7 @@ from evaluate_dataset import  EvaluateDocsDataset, EvaluateQueryDataset
 from evaluate_collator import EvaluateCollator
 from hf_trainer import HFTrainer
 from seeds import set_seed
+import uuid
 
 def print_args(args):
     # Print the values using a for loop
@@ -23,6 +24,8 @@ def print_args(args):
         print(f"{arg}: {value}")
 
 def main(args):
+    # args.pretrained = 'google/t5-v1_1-base'
+    # args.do_only_eval = True
     print_args(args)
     set_seed(args.seed)
 
@@ -78,21 +81,23 @@ def main(args):
         remove_complex_queries(examples_val, val_dict_query_ids_queries)
         print(f'Val set Total queries after removing complex queries: {len(val_dict_query_ids_queries)}')
 
-
-    # # dummy added
     # from analyze_retriever import calc_mrec_rec
-    # import random
+    # from run_eval import calc_f1_pr_rec
+    # from tools import DocumentFinder
     # from quest.common.example_utils import Example
+    # DocumentFinder.k= 1000
     # pred_examples = []
-    # num_docs = len(doc_title_map)
-    # for ex in examples_val:
-    #     query = ex.query
-    #     docs = [doc_title_map[random.randint(0,num_docs)] for i in range(111)]
-    #     pred_example = Example(query=query, docs=docs)
-    #     pred_examples.append(pred_example)
+    # for exam in examples_val:
+    #     current_docs_ids = DocumentFinder.find_docs(exam.query, exam.query)
+    #     unsorted_pred_doc_titles = [doc_title_map[id] for id in current_docs_ids]
 
-    # # pred_examples = example_utils.read_examples(FLAGS.pred)
+    #     tmp_pred_example = Example(query=exam.query, docs=unsorted_pred_doc_titles)
+    #     pred_examples.append(tmp_pred_example)
+
+    # print('ORIGINAL QUERIES RESULTS')
     # calc_mrec_rec(examples_val, pred_examples)
+    # calc_f1_pr_rec(examples_val, pred_examples)
+    # exit()
 
     # create dataset for training
     train_pair_dataset = PairDataset(train_query_ids, train_doc_ids, train_queries, train_docs,examples_train_aug)
@@ -113,7 +118,8 @@ def main(args):
     doc_val_collator = EvaluateCollator(tokenizer, max_length = 512)
     dict_val_collator = {'queries':query_val_collator,'docs':doc_val_collator}
 
-    OUTPUT_DIR = Path(args.output_dir) / args.pretrained / "model"
+    random_identifier = str(uuid.uuid4())[:11]
+    OUTPUT_DIR = Path(args.output_dir) / args.pretrained / "model" / random_identifier
     OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
 
     #key d05e9001945806ce8dcba485dc234bfe7579ca55
@@ -139,6 +145,7 @@ def main(args):
         eval_steps=args.eval_steps, #Number of update steps between two evaluations
         save_total_limit=1, # saves best and another one
         # optim = 'adafactor',
+        eval_delay = 4000,
         # lr_scheduler_type='linear',
         report_to="wandb",
         run_name=args.wb_run_name,  # name of the W&B run (optional)
@@ -157,7 +164,7 @@ def main(args):
 
     # trainer = Trainer(model, training_args, data_collator = pair_collator, train_dataset=train_pair_dataset,
     #                   eval_dataset=eval_dataset)#, callbacks=[],optimizers=(optimizer, lr_scheduler))  
-
+    early_stopping = EarlyStoppingCallback(early_stopping_patience=3, early_stopping_threshold=0.005)
     
     #     model(batch['query_ids'], batch['doc_ids'], batch['queries'], batch['docs'])
     trainer = HFTrainer(
@@ -170,6 +177,7 @@ def main(args):
         eval_k = args.k_for_eval,
         doc_title_map = doc_title_map,
         fp_16=args.fp16,
+        callbacks=[early_stopping],
         #dataloader_num_workers 
         optimizers = (optimizer, None)
     )

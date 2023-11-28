@@ -12,6 +12,7 @@ import logging
 from quest.common.example_utils import Example
 from typing import Dict
 from safetensors.torch import load_file
+import pickle
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -59,7 +60,7 @@ class HFTrainer(Trainer):
             docs_data_loader, desc="Encoding the docs", position=0, leave=True
         ):
             # i+=1
-            # if i > 20:
+            # if i > 10:
             #     break
             dids = batch.pop('ids')
             in_ids =  batch["inputs"]['input_ids'].to(device)
@@ -68,14 +69,19 @@ class HFTrainer(Trainer):
             with torch.no_grad(): # scores are float32 torch.cuda.amp.autocast(),
                 docs_scores = self.model.encode(input_ids =in_ids, attention_mask = att_mask).cpu()
             # docs_scores = torch.rand(len(dids))
-            
+            # if i == 0:
+            #     print(docs_scores[0])
+
             all_dids.extend(dids)
             all_docs_scores.append(docs_scores)
-            
+            # print('BREAK DOC')
+            # break
 
         all_docs_scores = torch.cat(all_docs_scores,dim=0)
-
-        torch.save(all_docs_scores, 'docs_finetuned_4000.pt')
+        print('SAVE DOCS SCORES!!!')
+        torch.save(all_docs_scores,f'scores_docs_check_{self.state.global_step}.pt')
+        with open(f'all_dids_check_{self.state.global_step}.pkl', 'wb') as file:
+            pickle.dump(all_dids, file)
 
         all_pred_examples = []
     
@@ -113,7 +119,7 @@ class HFTrainer(Trainer):
 
                 example = Example(query=query_text, docs=doc_texts, scores=scores)
                 all_pred_examples.append(example)
-            # break
+            
 
         avg_recall_vals, avg_mrecall_vals = calc_mrec_rec(gold_examples, all_pred_examples)
 

@@ -27,7 +27,7 @@ def print_avg_by_key(examples, metrics, key_fn):
   """
   key_to_metrics = collections.defaultdict(list)
   for example, metric in zip(examples, metrics):
-    key = key_fn(example)
+    key = key_fn(example) # e.g. key 'all'
     key_to_metrics[key].append(metric)
   # Compute averages.
   key_to_avg = {
@@ -35,6 +35,10 @@ def print_avg_by_key(examples, metrics, key_fn):
   }
   for key, val in key_to_avg.items():
     print("%s (%s): %s" % (key, len(key_to_metrics[key]), val))
+
+  # print('key_to_avg ',key_to_avg)
+  # print('*'*16)
+  # print('key_to_metrics ',key_to_metrics)
   return key_to_avg
 
 def print_avg_by_template(examples, metrics):
@@ -48,4 +52,5 @@ def print_avg_by_template(examples, metrics):
 
 def print_avg(examples, metrics):
   key_fn = lambda unused_x: "all"
-  return print_avg_by_key(examples, metrics, key_fn)
+  key_to_avg =  print_avg_by_key(examples, metrics, key_fn)
+  return key_to_avg
