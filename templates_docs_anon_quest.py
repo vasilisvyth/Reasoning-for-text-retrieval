@@ -3,10 +3,10 @@ the only difference with templates_better_dem is that we
 use question_i and find_docs
 '''
 
-INSTRUCTION_BETTER_DEM = 'You need to first break the question step by step into subquestions and then combine them to get the answer to the original question.'
+INSTRUCTION_DOCS_ANON = 'You need to first break the question step by step into subquestions and then combine them to get the answer to the original question.'
 
 
-DEMONSTRATIONS_BETTER_DEM = {0:{
+DEMONSTRATIONS_DOCS_ANON = {0:{
 'ex1':'''
 Question: 1998 fiction books based on Doctor Who
 Let's break down the question step by step:
@@ -125,7 +125,7 @@ Combine them to get the answer to the original question:
 ans = docs_0 and not docs_1
 ```
 '''}}
-TEST_TEMPLATE_BETTER_DEM = '''
+TEST_TEMPLATE_DOCS_ANON = '''
 How about this Question?
 Question: {question}
 Let's break down the question step by step:

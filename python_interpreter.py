@@ -161,6 +161,6 @@ def main(args):
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='GPT API')
-    parser.add_argument('--result_dir', type=str, default="dem_4_const.json")
+    parser.add_argument('--result_dir', type=str, default="docs_anon.json")
     args = parser.parse_args()
     main(args)

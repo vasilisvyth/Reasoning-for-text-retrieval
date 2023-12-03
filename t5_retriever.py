@@ -143,7 +143,7 @@ def main(args):
         max_steps=args.max_steps,
         save_steps=args.save_steps, #Number of updates steps before two checkpoint saves
         eval_steps=args.eval_steps, #Number of update steps between two evaluations
-        save_total_limit=1, # saves best and another one
+        save_total_limit=2, # saves best and another one
         # optim = 'adafactor',
         eval_delay = 4000,
         # lr_scheduler_type='linear',

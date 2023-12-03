@@ -23,7 +23,7 @@ Convert to the indexed format used by the t5x_retrieval library.
 
 from absl import app
 from absl import flags
-
+import pickle
 from quest.common import document_utils
 from quest.common import tsv_utils
 
@@ -50,6 +50,9 @@ def main(unused_argv):
   tsv_utils.write_tsv(doc_title_ids, FLAGS.doc_title_map)
   tsv_utils.write_tsv(doc_text_ids, FLAGS.doc_text_map)
 
+  # Serialize the data to a binary file using pickle.dump
+  with open('quest_data\\doc_text_list.pickle', 'wb') as f:
+      pickle.dump(doc_text_ids, f)
 
 if __name__ == "__main__":
   app.run(main)

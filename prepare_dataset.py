@@ -115,6 +115,8 @@ def build_positive_pairs(dict_query_ids_queries, query_ids_doc_ids, doc_text_map
             positive_doc_ids.append(doc_id)
             positive_queries.append(query)
             positive_docs.append(doc)
+        else:
+            print('query removed from training')
     
     return positive_query_ids, positive_doc_ids, positive_queries, positive_docs
 
