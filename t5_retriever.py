@@ -3,7 +3,7 @@ from quest.common import tsv_utils
 import argparse
 import os
 import torch
-from transformers import AutoTokenizer, TrainingArguments, Trainer, EarlyStoppingCallback
+from transformers import AutoTokenizer, TrainingArguments, Trainer, EarlyStoppingCallback, DataCollatorWithPadding
 from transformers.optimization import AdafactorSchedule
 from pair_dataset import PairDataset
 from pair_collator import BiEncoderPairCollator
@@ -16,6 +16,8 @@ from evaluate_collator import EvaluateCollator
 from hf_trainer import HFTrainer
 from seeds import set_seed
 import uuid
+import wandb
+
 
 def print_args(args):
     # Print the values using a for loop
@@ -25,7 +27,8 @@ def print_args(args):
 
 def main(args):
     # args.pretrained = 'google/t5-v1_1-base'
-    # args.do_only_eval = True
+
+    # args.do_train  = True
     print_args(args)
     set_seed(args.seed)
 
@@ -59,10 +62,13 @@ def main(args):
 
     # build positive pairs for training
     train_query_ids, train_doc_ids, train_queries, train_docs = build_positive_pairs(train_dict_query_ids_queries, train_query_ids_doc_ids, doc_text_map)
-    
-    # Load validation data related files
+
+    # Load validation and test data related files
     val_dict_query_ids_queries, _ = read_queries(os.path.join(args.data_dir,'val_query_ids_queries.tsv'), 
                                                  os.path.join(args.data_dir,'val_query_ids_doc_ids.tsv'))
+    
+    test_dict_query_ids_queries, _ = read_queries(os.path.join(args.data_dir,'test_query_ids_queries.tsv'), 
+                                                 os.path.join(args.data_dir,'test_query_ids_doc_ids.tsv'))
     if args.split:
         val_dict_query_ids_queries.update(val_dict_query_ids_queries_extra)
         examples_val.extend(examples_val_extra)
@@ -97,18 +103,20 @@ def main(args):
 
     # create dataset for validation
     eval_dataset = {}
+    eval_dataset['queries']= EvaluateQueryDataset(examples_val, val_dict_query_ids_queries, tokenizer)
+    eval_dataset['docs'] = EvaluateDocsDataset(doc_text_map, tokenizer)
 
-    eval_dataset['queries']= EvaluateQueryDataset(examples_val, val_dict_query_ids_queries)
-
-    # doc_ids, docs =  list(doc_text_map.keys()), list(doc_text_map.values())
-    eval_dataset['docs'] = EvaluateDocsDataset(doc_text_map)
+    # create dataset for test
+    test_dataset = {}
+    test_dataset['queries']= EvaluateQueryDataset(examples_test, test_dict_query_ids_queries, tokenizer)
+    test_dataset['docs'] = EvaluateDocsDataset(doc_text_map, tokenizer)
 
     # Create collators for validation and training pairs
     train_collator  = BiEncoderPairCollator(
             tokenizer, query_max_length = 64, doc_max_length = 512
     )
-    query_val_collator = EvaluateCollator(tokenizer, max_length = 64)
-    doc_val_collator = EvaluateCollator(tokenizer, max_length = 512)
+    query_val_collator = DataCollatorWithPadding(max_length=64, tokenizer=tokenizer, padding='max_length')
+    doc_val_collator = DataCollatorWithPadding(max_length=512, tokenizer=tokenizer, padding='max_length')
     dict_val_collator = {'queries':query_val_collator,'docs':doc_val_collator}
 
     random_identifier = str(uuid.uuid4())[:11]
@@ -119,7 +127,6 @@ def main(args):
     os.environ["WANDB_PROJECT"] = "quest" # name your W&B project 
     # os.environ["WANDB_LOG_MODEL"] = "checkpoint" # log all model checkpoints
 
-    import wandb
     # wandb.login()
     training_args = TrainingArguments(
         output_dir=OUTPUT_DIR,
@@ -148,7 +155,7 @@ def main(args):
     )
 
     # scale_parameter, relative_step unsure have to compare with jax implementation
-    scale_parameter=True
+    scale_parameter=False
     relative_step=False
     warmup_init = False # warmup_init=True` requires `relative_step=True
     print(f'scale_parameter {scale_parameter} relative_step {relative_step} warmup_init {warmup_init}')
@@ -165,7 +172,7 @@ def main(args):
         train_dataset=train_pair_dataset,
         data_collator=train_collator,
         args=training_args,
-        eval_dataset=eval_dataset,
+        eval_dataset=test_dataset,
         eval_collator=dict_val_collator,
         eval_k = args.k_for_eval,
         doc_title_map = doc_title_map,
@@ -184,7 +191,7 @@ def main(args):
     if args.do_only_eval:
         print('-'*16)
         print('DO ONLY EVALUATION')
-        trainer.evaluate(eval_dataset)
+        trainer.evaluate(test_dataset)
         print('-'*16)
     #wandb.finish() # for colab only
 
@@ -200,7 +207,7 @@ if __name__=='__main__':
     parser.add_argument(
         "--tokenizer",
         type=str,
-        default="google/t5-v1_1-small",
+        default="google/t5-v1_1-base",
         help="Pretrained checkpoint for the base model",
     )
     parser.add_argument(
