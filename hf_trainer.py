@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 class HFTrainer(Trainer):
-    def __init__(self, *args, eval_collator=None, eval_k, doc_title_map, fp_16,**kwargs):
+    def __init__(self, *args, eval_collator=None, eval_k, doc_title_map, fp_16, **kwargs):
         super().__init__(*args, **kwargs)
         self.eval_collator = eval_collator
         self.eval_k = eval_k
@@ -63,8 +63,11 @@ class HFTrainer(Trainer):
             # if i > 10:
             #     break
             dids = batch.pop('ids')
-            in_ids =  batch["inputs"]['input_ids'].to(device)
-            att_mask = batch["inputs"]['attention_mask'].to(device)
+            in_ids =  batch['input_ids']
+            in_ids = in_ids.to(device)
+
+            att_mask = batch['attention_mask']
+            att_mask = att_mask.to(device)
             # if self.fp_16:
             with torch.no_grad(): # scores are float32 torch.cuda.amp.autocast(),
                 docs_scores = self.model.encode(input_ids =in_ids, attention_mask = att_mask).cpu()
@@ -74,13 +77,17 @@ class HFTrainer(Trainer):
 
             all_dids.extend(dids)
             all_docs_scores.append(docs_scores)
+            
             # print('BREAK DOC')
-            # break
+            
 
         all_docs_scores = torch.cat(all_docs_scores,dim=0)
         print('SAVE DOCS SCORES!!!')
-        torch.save(all_docs_scores,f'scores_docs_check_{self.state.global_step}.pt')
-        with open(f'all_dids_check_{self.state.global_step}.pkl', 'wb') as file:
+        docs_scores_path = os.path.join(self.args.output_dir, f'scores_docs_check_{self.state.global_step}.pt')
+        torch.save(all_docs_scores,docs_scores_path)
+
+        dids_path = os.path.join(self.args.output_dir, f'all_dids_check_{self.state.global_step}.pkl')
+        with open(dids_path, 'wb') as file:
             pickle.dump(all_dids, file)
 
         all_pred_examples = []
@@ -91,10 +98,10 @@ class HFTrainer(Trainer):
        
             qids = batch.pop('ids')
 
-            in_ids =  batch["inputs"]['input_ids']
+            in_ids =  batch['input_ids']
             in_ids = in_ids.to(device)
             
-            att_mask = batch["inputs"]['attention_mask']
+            att_mask = batch['attention_mask']
             att_mask = att_mask.to(device)
             with torch.no_grad(): #torch.cuda.amp.autocast(), 
                 queries_scores = self.model.encode(input_ids =in_ids, attention_mask = att_mask).cpu()
