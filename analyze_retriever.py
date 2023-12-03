@@ -126,7 +126,7 @@ def main(unused_argv):
 
   # val_dict_query_ids_queries, _ = read_queries(path_val_query_ids_queries, path_val_query_ids_doc_ids)
   # gold_path = os.path.join('quest_data','val.jsonl')
-  # gold_examples = example_utils.read_examples(gold_path)
+  gold_examples = example_utils.read_examples('quest_data\\test.jsonl')
   # pred_examples = []
   # num_docs = len(doc_title_map)
   # for ex in gold_examples:
@@ -135,8 +135,8 @@ def main(unused_argv):
   #   pred_example = Example(query=query, docs=docs)
   #   pred_examples.append(pred_example)
 
-  # # pred_examples = example_utils.read_examples(FLAGS.pred)
-  # calc_mrec_rec(gold_examples, pred_examples)
+  pred_examples = example_utils.read_examples('bm25.out')
+  calc_mrec_rec(gold_examples, pred_examples)
   
 
 
