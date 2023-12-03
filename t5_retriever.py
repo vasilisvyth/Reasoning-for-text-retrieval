@@ -35,22 +35,16 @@ def main(args):
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     
     # Load training and validation examples
-    path_train_aug =os.path.join(args.data_dir,'train_aug.jsonl')
-    examples_train_aug = example_utils.read_examples(path_train_aug)
-
-    path_val = os.path.join(args.data_dir,'val.jsonl')
-    examples_val = example_utils.read_examples(path_val)
+    examples_train_aug = example_utils.read_examples(os.path.join(args.data_dir,'train_aug.jsonl'))
+    examples_val = example_utils.read_examples(os.path.join(args.data_dir,'val.jsonl'))
+    examples_test = example_utils.read_examples(os.path.join(args.data_dir,'test.jsonl'))
 
     # Load training data related files
-    path_train_query_ids_queries = os.path.join(args.data_dir, 'train_query_ids_queries.tsv')
-    path_train_query_ids_doc_ids = os.path.join(args.data_dir,'train_query_ids_doc_ids.tsv')
-
-    train_dict_query_ids_queries, train_query_ids_doc_ids = read_queries(path_train_query_ids_queries, path_train_query_ids_doc_ids)
+    train_dict_query_ids_queries, train_query_ids_doc_ids = read_queries(os.path.join(args.data_dir, 'train_query_ids_queries.tsv'), 
+                                                                         os.path.join(args.data_dir,'train_query_ids_doc_ids.tsv'))
 
     # load docs
-    path_doc_text_list = os.path.join(args.data_dir,'doc_text_list.pickle')
-    path_doc_title_map = os.path.join(args.data_dir,'doc_title_map.tsv')
-    doc_text_map, doc_title_map = read_docs(path_doc_text_list, path_doc_title_map)
+    doc_text_map, doc_title_map = read_docs(os.path.join(args.data_dir,'doc_text_list.pickle'), os.path.join(args.data_dir,'doc_title_map.tsv'))
 
     # Remove queries with metadata!= '_' from the dictionary
     if not args.use_complex_queries:
@@ -65,11 +59,10 @@ def main(args):
 
     # build positive pairs for training
     train_query_ids, train_doc_ids, train_queries, train_docs = build_positive_pairs(train_dict_query_ids_queries, train_query_ids_doc_ids, doc_text_map)
+    
     # Load validation data related files
-    path_val_query_ids_queries = os.path.join(args.data_dir,'val_query_ids_queries.tsv')
-    path_val_query_ids_doc_ids = os.path.join(args.data_dir,'val_query_ids_doc_ids.tsv')
-
-    val_dict_query_ids_queries, _ = read_queries(path_val_query_ids_queries, path_val_query_ids_doc_ids)
+    val_dict_query_ids_queries, _ = read_queries(os.path.join(args.data_dir,'val_query_ids_queries.tsv'), 
+                                                 os.path.join(args.data_dir,'val_query_ids_doc_ids.tsv'))
     if args.split:
         val_dict_query_ids_queries.update(val_dict_query_ids_queries_extra)
         examples_val.extend(examples_val_extra)
