@@ -28,13 +28,14 @@ def print_args(args):
 def main(args):
     # args.pretrained = 'google/t5-v1_1-base'
 
-    # args.do_train  = True
+    args.do_only_eval  = True
     print_args(args)
     set_seed(args.seed)
 
     
     # load model and tokenizer
-    model = DenseBiEncoder(args.pretrained, args.scale_logits, args.right_loss)
+    # model = DenseBiEncoder(args.pretrained, args.scale_logits, args.right_loss)
+    model = DenseBiEncoder.from_pretrained(args.pretrained, args.scale_logits, args.right_loss)
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     
     # Load training and validation examples
@@ -109,7 +110,7 @@ def main(args):
     # create dataset for test
     test_dataset = {}
     test_dataset['queries']= EvaluateQueryDataset(examples_test, test_dict_query_ids_queries, tokenizer)
-    test_dataset['docs'] = EvaluateDocsDataset(doc_text_map, tokenizer)
+    test_dataset['docs'] = eval_dataset['docs']#EvaluateDocsDataset(doc_text_map, tokenizer)
 
     # Create collators for validation and training pairs
     train_collator  = BiEncoderPairCollator(
@@ -131,7 +132,7 @@ def main(args):
     training_args = TrainingArguments(
         output_dir=OUTPUT_DIR,
         learning_rate=args.lr,
-
+        # torch_compile=True,
         evaluation_strategy="steps",
         fp16=args.fp16,
         # fp16=True,

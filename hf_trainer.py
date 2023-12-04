@@ -56,27 +56,25 @@ class HFTrainer(Trainer):
         all_dids = []
         all_docs_scores = []
         i=0
-        for batch in tqdm(
-            docs_data_loader, desc="Encoding the docs", position=0, leave=True
-        ):
-            # i+=1
-            # if i > 10:
-            #     break
-            dids = batch.pop('ids')
-            in_ids =  batch['input_ids']
-            in_ids = in_ids.to(device)
-
-            att_mask = batch['attention_mask']
-            att_mask = att_mask.to(device)
-            # if self.fp_16:
-            with torch.no_grad(): # scores are float32 torch.cuda.amp.autocast(),
+        with torch.no_grad(): # scores are float32 torch.cuda.amp.autocast(),
+            for batch in tqdm(
+                docs_data_loader, desc="Encoding the docs", position=0, leave=True
+            ):
+                # i+=1
+                # if i > 10:
+                #     break
+                dids = batch.pop('ids').tolist()
+                in_ids =  batch['input_ids'].to(device)
+                att_mask = batch['attention_mask'].to(device)
+                # if self.fp_16:
+                
                 docs_scores = self.model.encode(input_ids =in_ids, attention_mask = att_mask).cpu()
-            # docs_scores = torch.rand(len(dids))
-            # if i == 0:
-            #     print(docs_scores[0])
+                # docs_scores = torch.rand(len(dids))
+                # if i == 0:
+                #     print(docs_scores[0])
 
-            all_dids.extend(dids)
-            all_docs_scores.append(docs_scores)
+                all_dids.extend(dids)
+                all_docs_scores.append(docs_scores)
             
             # print('BREAK DOC')
             
@@ -96,7 +94,7 @@ class HFTrainer(Trainer):
             queries_data_loader, desc="Encoding the queries", position=0, leave=True
         )):
        
-            qids = batch.pop('ids')
+            qids = batch.pop('ids').tolist()
 
             in_ids =  batch['input_ids']
             in_ids = in_ids.to(device)

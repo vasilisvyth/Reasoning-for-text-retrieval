@@ -7,12 +7,12 @@ class DenseBiEncoder(nn.Module):
     _keys_to_ignore_on_save = None #useful when loading a model
     def __init__(self, model_name_or_dir, scale_logits, right_loss) -> None:
         super().__init__()
-        if 't5' in model_name_or_dir:
+        # if 't5' in model_name_or_dir:
             # check https://github.com/UKPLab/sentence-transformers/blob/master/sentence_transformers/models/Transformer.py#L53
-            T5EncoderModel._keys_to_ignore_on_load_unexpected = ["decoder.*"] #decoder and anything after it, probably not needed at all
-            self.model = T5EncoderModel.from_pretrained(model_name_or_dir)
-        else:
-            self.model = AutoModel.from_pretrained(model_name_or_dir)
+        T5EncoderModel._keys_to_ignore_on_load_unexpected = ["decoder.*"] #decoder and anything after it, probably not needed at all
+        self.model = T5EncoderModel.from_pretrained(model_name_or_dir)
+        # else:
+        #     self.model = AutoModel.from_pretrained(model_name_or_dir)
         self.scale_logits, self.right_loss = scale_logits, right_loss
         self.loss = nn.CrossEntropyLoss()
         ## Count the number of parameters 
