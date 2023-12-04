@@ -13,6 +13,8 @@ import pickle
 import numpy as np
 from tools import DocumentFinder
 from analyze_retriever import calc_mrec_rec
+from quest.common import document_utils
+from tqdm import tqdm
 
 def find_all_positions(text, substring):
     positions = []
@@ -131,6 +133,7 @@ def main(args):
     path_doc_text_list = os.path.join(args.data_dir,'doc_text_list.pickle')
     path_doc_title_map = os.path.join(args.data_dir,'doc_title_map.tsv')
     doc_text_map, doc_title_map = read_docs(path_doc_text_list, path_doc_title_map)
+    documents = document_utils.read_documents("quest_data\\documents.jsonl")
 
     # tensors = {}
     # from safetensors import safe_open
@@ -142,7 +145,8 @@ def main(args):
     path_test = os.path.join(args.data_dir,args.gold_examples_dir)
     gold_examples = example_utils.read_examples(path_test)
 
-    # DocumentFinder.k= args.k
+    DocumentFinder.k= args.k
+    DocumentFinder.method = 'bm25'
     # pred_examples = []
     # for exam in gold_examples:
     #     current_docs_ids = DocumentFinder.find_docs(exam.query, exam.query)
@@ -220,43 +224,43 @@ def main(args):
             unsorted_pred_doc_titles = []
             var_dict = safe_execute(final_program)
             if var_dict is not None:
-                ind_scores = {}
-                not_subqs = []
-                if ' not ' in answer_code:
-                    list_answer = answer_code.strip().split(' ')
-                    not_docs = [list_answer[ii+1] for ii, el in enumerate(list_answer) if el=='not']
-                    # ind_scores = {}
-                    for not_doc in not_docs:
-                        # var_dict[not_doc]
-                        try:
-                            num = int(not_doc.split('_')[1])
-                        except IndexError:
-                            print("Index out of range!")
-                            continue
+                # ind_scores = {}
+                # not_subqs = []
+                # if ' not ' in answer_code:
+                #     list_answer = answer_code.strip().split(' ')
+                #     not_docs = [list_answer[ii+1] for ii, el in enumerate(list_answer) if el=='not']
+                #     # ind_scores = {}
+                #     for not_doc in not_docs:
+                #         # var_dict[not_doc]
+                #         try:
+                #             num = int(not_doc.split('_')[1])
+                #         except IndexError:
+                #             print("Index out of range!")
+                #             continue
 
-                        subq = var_dict[f'question_{num}']
-                        not_subqs.append(subq)
+                #         subq = var_dict[f'question_{num}']
+                #         not_subqs.append(subq)
 
-                        # subq = subq.replace('find ','')
-                        dict_subq = DocumentFinder.results[query][subq]
-                        for ind, score in zip(dict_subq['top_k_indices'],dict_subq['top_k_values']):
-                            if ind not in ind_scores:
-                                ind_scores[ind] = dict_subq['top_k_values'][0] - score
-                            else:
-                                ind_scores[ind] += (dict_subq['top_k_values'][0] - score)
-                # else:
+                #         # subq = subq.replace('find ','')
+                #         dict_subq = DocumentFinder.results[query][subq]
+                #         for ind, score in zip(dict_subq['top_k_indices'],dict_subq['top_k_values']):
+                #             if ind not in ind_scores:
+                #                 ind_scores[ind] = dict_subq['top_k_values'][0] - score
+                #             else:
+                #                 ind_scores[ind] += (dict_subq['top_k_values'][0] - score)
+                # # else:
                 
-                for subq in DocumentFinder.results[query]:
-                    # subq = subq.replace('find ','')
-                    if subq in not_subqs: continue
-                    dict_subq = DocumentFinder.results[query][subq]
-                    for ind, score in zip(dict_subq['top_k_indices'],dict_subq['top_k_values']):
-                        if ind not in ind_scores:
-                            ind_scores[ind] = score
-                        else:
-                            ind_scores[ind] += score
+                # for subq in DocumentFinder.results[query]:
+                #     # subq = subq.replace('find ','')
+                #     if subq in not_subqs: continue
+                #     dict_subq = DocumentFinder.results[query][subq]
+                #     for ind, score in zip(dict_subq['top_k_indices'],dict_subq['top_k_values']):
+                #         if ind not in ind_scores:
+                #             ind_scores[ind] = score
+                #         else:
+                #             ind_scores[ind] += score
                 
-                sorted_keys = sorted(ind_scores, key=lambda x: ind_scores[x], reverse=True)[:1000]
+                # sorted_keys = sorted(ind_scores, key=lambda x: ind_scores[x], reverse=True)[:1000]
                 # if '(' in answer_code:
                 #     answer_code = answer_code.replace('(','( ')
                 #     count_parenthesis+=1
@@ -264,7 +268,8 @@ def main(args):
 
                 # questions = [var_dict[var] for var in var_dict if 'answer' not in var and 'question' not in var and 'instruction' not in var and var != 'x' and isinstance(var_dict[var], str)]
                 unsorted_doc_ids = var_dict['ans'] #! previously I just used this
-                unsorted_pred_doc_titles = [doc_title_map[id] for id in sorted_keys]
+                # unsorted_pred_doc_titles = [doc_title_map[id] for id in unsorted_doc_ids]
+                unsorted_pred_doc_titles = [documents[idx].title for idx in unsorted_doc_ids]
                 results_len.append(len(unsorted_pred_doc_titles))
             else:
                 questions = [query]
