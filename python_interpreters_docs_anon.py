@@ -15,6 +15,8 @@ from tools import DocumentFinder
 from analyze_retriever import calc_mrec_rec
 from quest.common import document_utils
 from tqdm import tqdm
+from collections import defaultdict
+import matplotlib.pyplot as plt
 
 def find_all_positions(text, substring):
     positions = []
@@ -89,32 +91,32 @@ def find_all_positions(text, substring):
 # I have strings like the following and I want to be able to put parentheses around the difference symbol. Complete the code
 
 def set_conversion(str):
-    str = str.replace('and not',' difference ')
-    str = str.replace(' and ',' intersect ')
-    str = str.replace(' or ',' union ')
+    str = str.replace('and not','-')
+    str = str.replace(' and ',' & ')
+    str = str.replace(' or ',' | ')
     # if 'not' in str:
     #     continue
 
-    list_str = str.split()
-    program = ''
-    inside_diff= False
-    for i, substr in enumerate(list_str):
-        if substr=='difference':
-            program+= '.difference('
-            inside_diff = True
+    # list_str = str.split()
+    # program = ''
+    # inside_diff= False
+    # for i, substr in enumerate(list_str):
+    #     if substr=='difference':
+    #         program+= '.difference('
+    #         inside_diff = True
 
-        elif substr=='intersect':
-            program += ' & '
-        elif substr=='union':
-            program += ' | '
-        else:
-            if inside_diff:
-                program += f'{substr})'
-                inside_diff = False
-            else:
-                program += substr
+    #     elif substr=='intersect':
+    #         program += ' & '
+    #     elif substr=='union':
+    #         program += ' | '
+    #     else:
+    #         if inside_diff:
+    #             program += f'{substr})'
+    #             inside_diff = False
+    #         else:
+    #             program += substr
 
-    return program
+    return str
 
 # Define a function that takes a string and returns the desired function call
 def convert2function(text):
@@ -243,12 +245,14 @@ def main(args):
     pred_examples = []
     results_len = []
     count_parenthesis = 0
-    # lens_per_template = {}
+    lens_per_template = defaultdict(list)
+    
     for query in tqdm(results_json):
         if not 'pred' in results_json[query]:
             print('forgot sth')
             count_forgot +=1
-        
+
+        template_used = results_json[query]['template']
         result = results_json[query]['pred']
         replacement_query = query.replace("'", "\\'")  # Escape single quotes
 
@@ -256,7 +260,7 @@ def main(args):
         program = synthesize_program(result = new_result, prefix = '')
         if 'ans = ' not in program:
             count_not_ans +=1
-            unsorted_pred_doc_titles = []
+            sorted_pred_doc_titles = []
         else:
             answer_index = program.index('ans = ')
             answer_code = program[answer_index:]
@@ -274,13 +278,21 @@ def main(args):
             var_dict = safe_execute(final_program)
 
             if var_dict is not None:
-                ans = var_dict['ans']
-                sorted_items = sorted(ans.items(), key=lambda x: x[1], reverse=True)
-    
-                # Take the top k items
-                top_k_keys = [key for key, _ in sorted_items[:1000]]
-                sorted_pred_doc_titles = [documents[idx].title for idx in top_k_keys]
-                
+                try:
+                    ans = var_dict['ans']
+                    sorted_items = sorted(ans.items(), key=lambda x: x[1], reverse=True)
+                     # Take the top k items
+                    top_k_keys = [key for key, _ in sorted_items[:1000]]
+                    sorted_pred_doc_titles = [documents[idx].title for idx in top_k_keys]
+
+                    lens_per_template[template_used].append(len(top_k_keys))
+                except AttributeError:
+                    # Handle the case where ans is not a dictionary
+                    print(f'original query {query}')
+                    print(f"Error: {ans} is not a dictionary")
+                    print(final_program)
+                    sorted_pred_doc_titles = []
+
             else:
                 questions = [query]
                 count_bug +=1
@@ -291,6 +303,28 @@ def main(args):
 
     calc_f1_pr_rec(gold_examples, pred_examples)
     calc_mrec_rec(gold_examples, pred_examples)
+    print(f'count bugs {count_bug}')
+
+    means = {key: np.mean(values) for key, values in lens_per_template.items()}
+    std_devs = {key: np.std(values) for key, values in lens_per_template.items()}
+
+    # Create a bar plot
+    fig, ax = plt.subplots()
+
+    # Plotting the means
+    ax.bar(means.keys(), means.values(), yerr=std_devs.values(), capsize=5, color='skyblue', label='Mean')
+
+    # Adding labels and title
+    ax.set_ylabel('Retrieved docs per template')
+    ax.set_xlabel('Templates')
+    ax.set_title('Mean and Standard Deviation for Each Key')
+    ax.legend()
+
+    # Show the plot
+    plt.show()
+
+
+
     # with open('res_docs_anon_1000.pkl', 'wb') as file:
     #     pickle.dump(DocumentFinder.results, file)
 

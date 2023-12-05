@@ -35,7 +35,7 @@ class CustomDictOperations:
             result[key] = max(self.data.get(key, float('-inf')), other.data.get(key, float('-inf')))
         return CustomDictOperations(result)
 
-    def difference(self, other):
+    def __sub__(self, other):
         result = self.data.copy()
         for key in set(self.data.keys()) & set(other.data.keys()):
             result[key] -= other.data[key]
