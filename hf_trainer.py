@@ -78,10 +78,9 @@ class HFTrainer(Trainer):
             
             # print('BREAK DOC')
             
-
-        all_docs_scores = torch.cat(all_docs_scores,dim=0)
         print('SAVE DOCS SCORES!!!')
         docs_scores_path = os.path.join(self.args.output_dir, f'scores_docs_check_{self.state.global_step}.pt')
+        all_docs_scores = torch.cat(all_docs_scores,dim=0)
         torch.save(all_docs_scores,docs_scores_path)
 
         dids_path = os.path.join(self.args.output_dir, f'all_dids_check_{self.state.global_step}.pkl')

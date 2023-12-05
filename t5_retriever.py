@@ -28,14 +28,14 @@ def print_args(args):
 def main(args):
     # args.pretrained = 'google/t5-v1_1-base'
 
-    args.do_only_eval  = True
+    # args.do_only_eval  = True
     print_args(args)
     set_seed(args.seed)
 
     
     # load model and tokenizer
-    # model = DenseBiEncoder(args.pretrained, args.scale_logits, args.right_loss)
-    model = DenseBiEncoder.from_pretrained(args.pretrained, args.scale_logits, args.right_loss)
+    model = DenseBiEncoder(args.pretrained, args.scale_logits, args.right_loss)
+    # model = DenseBiEncoder.from_pretrained(args.pretrained, args.scale_logits, args.right_loss)
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     
     # Load training and validation examples
@@ -136,7 +136,7 @@ def main(args):
         evaluation_strategy="steps",
         fp16=args.fp16,
         # fp16=True,
-        # warmup_steps=args.warmup_steps,
+        warmup_steps=args.warmup_steps,
         metric_for_best_model=f'avg_rec@{args.k_for_eval}',
         load_best_model_at_end=True,
         per_device_train_batch_size=args.train_batch_size,
@@ -146,7 +146,7 @@ def main(args):
         eval_steps=args.eval_steps, #Number of update steps between two evaluations
         save_total_limit=2, # saves best and another one
         # optim = 'adafactor',
-        eval_delay = 4000,
+        eval_delay = 9000,
         # lr_scheduler_type='linear',
         report_to="wandb",
         run_name=args.wb_run_name,  # name of the W&B run (optional)
@@ -156,7 +156,7 @@ def main(args):
     )
 
     # scale_parameter, relative_step unsure have to compare with jax implementation
-    scale_parameter=False
+    scale_parameter=True
     relative_step=False
     warmup_init = False # warmup_init=True` requires `relative_step=True
     print(f'scale_parameter {scale_parameter} relative_step {relative_step} warmup_init {warmup_init}')
