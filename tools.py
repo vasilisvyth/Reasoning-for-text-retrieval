@@ -19,6 +19,34 @@ model.to(device)
 with open('dum_bm25_obj.pickle', 'rb') as f:
     retriever = pickle.load(f)
 
+class CustomDictOperations:
+    def __init__(self, data):
+        self.data = data
+
+    def __and__(self, other):
+        result = {}
+        for key in set(self.data.keys()) & set(other.data.keys()): # intersected keys
+            result[key] = self.data[key] + other.data[key]
+        return CustomDictOperations(result)
+
+    def __or__(self, other):
+        result = {}
+        for key in set(self.data.keys()) | set(other.data.keys()):
+            result[key] = max(self.data.get(key, float('-inf')), other.data.get(key, float('-inf')))
+        return CustomDictOperations(result)
+
+    def difference(self, other):
+        result = self.data.copy()
+        for key in set(self.data.keys()) & set(other.data.keys()):
+            result[key] -= other.data[key]
+        return CustomDictOperations(result)
+
+    def __repr__(self):
+        return repr(self.data) # still return a dict
+
+    def items(self):
+        return self.data.items()
+
 class DocumentFinder:
     # model = DenseBiEncoder('google/t5-v1_1-small', False, False).to(device)  # Your model initialization
     tokenizer = AutoTokenizer.from_pretrained('google/t5-v1_1-base')  # Your tokenizer initialization
@@ -54,24 +82,26 @@ class DocumentFinder:
             top_k_values, top_k_indices = top_k_values.squeeze().tolist(), top_k_indices.squeeze().tolist()
             
         elif DocumentFinder.method == 'bm25':
-            docs_scores = retriever.get_docs_ids_and_scores(query, topk= cls.k)
-            top_k_indices = [doc for doc, _ in docs_scores]
-            top_k_values = [score for _, score in docs_scores]
+            top_k_indices, top_k_values = retriever.get_docs_ids_and_scores(query, topk= cls.k)
+   
         else:
             raise(f'{DocumentFinder.method} is not allowed. We only allow bm25 or t5-base')
 
         if original_query not in cls.results:
             cls.results[original_query] = {}
 
+        map_ind_values = {ind:val for ind, val in zip(top_k_indices, top_k_values)}
+
         cls.results[original_query][query] = {
             'top_k_values': top_k_values,
             'top_k_indices': top_k_indices
         }
 
-        answers = set(top_k_indices)
+        # answers = set(top_k_indices)
+        custom_dict = CustomDictOperations(map_ind_values)
 
 
-        return answers
+        return custom_dict
 # def find_docs(query):
 #     return set({1})
 
