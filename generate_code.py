@@ -63,14 +63,21 @@ def tokenize_data(test_dict_query_ids_queries, tokenizer, dict_tokenized_demonst
             selected_demonstrations_ids = [2,4,6,3]
             random.shuffle(selected_demonstrations_ids)
 
-        input_ids, attention_mask = concat_tokenized_demonstrations(dict_tokenized_demonstations, selected_demonstrations_ids)
+        tokenized_instuction = tokenizer('Below is an instruction that describes a task. Write a response that appropriately completes the request.')
+    
+        input_ids = tokenized_instuction['input_ids']
+        attention_mask = tokenized_instuction['attention_mask']
+
+        dem_input_ids, dem_attention_mask = concat_tokenized_demonstrations(dict_tokenized_demonstations, selected_demonstrations_ids)
+        input_ids = input_ids+ dem_input_ids 
+        attention_mask = attention_mask + dem_attention_mask
 
         test_example = TEST_TEMPLATE_DOCS_ANON.format(question=query)
 
         tokenized_test_example = tokenizer(test_example)
 
-        input_ids.extend(tokenized_test_example['input_ids'])
-        attention_mask.extend(tokenized_test_example['attention_mask'])
+        input_ids = input_ids + tokenized_test_example['input_ids']
+        attention_mask = attention_mask + tokenized_test_example['attention_mask']
 
         all_input_ids.append(input_ids)
         all_attention_mask.append(attention_mask)
@@ -123,6 +130,8 @@ def main(args):
     for batch in tqdm(dataloader):
         input_ids = batch['input_ids'].to(device)
         attention_mask = batch['attention_mask'].to(device)
+        # input_ids, attention_mask = input_ids[:2,:32], attention_mask[:2,:32]
+
         qids = batch['qids']
         print('before generate')
         print(f"Model's device: {next(model.parameters()).device}")
