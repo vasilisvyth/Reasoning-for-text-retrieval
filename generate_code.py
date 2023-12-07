@@ -5,7 +5,7 @@ from templates_llama import INSTRUCTION_DOCS_ANON, DEMONSTRATIONS_DOCS_ANON, TES
 import argparse
 import torch
 import os
-from transformers import LlamaForCausalLM, CodeLlamaTokenizer, DataCollatorWithPadding, AutoModelForCausalLM, AutoTokenizer
+from transformers import LlamaForCausalLM, CodeLlamaTokenizer, DataCollatorWithPadding, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from templates import demonstration_op_map
 from code_llm_dataset import Code_llm_dataset
 from torch.utils.data import DataLoader
@@ -63,8 +63,8 @@ def tokenize_data(test_dict_query_ids_queries, tokenizer, dict_tokenized_demonst
             selected_demonstrations_ids = [2,4,6,3]
             random.shuffle(selected_demonstrations_ids)
 
-        tokenized_instuction = tokenizer('Below is an instruction that describes a task. Write a response that appropriately completes the request.')
-    
+        tokenized_instuction = tokenizer('Below is an instruction that describes a task. Write python code that appropriately completes the request. Think step by step')
+        #'Write python code that first breaks the instruction step by step into subquestions and then combine them to get the answer to the original question.'
         input_ids = tokenized_instuction['input_ids']
         attention_mask = tokenized_instuction['attention_mask']
 
@@ -85,6 +85,9 @@ def tokenize_data(test_dict_query_ids_queries, tokenizer, dict_tokenized_demonst
 
     return all_input_ids, all_attention_mask, all_qids
 
+def bytes_to_giga_bytes(bytes):
+  return bytes / 1024 / 1024 / 1024
+
 def main(args):
     print_args(args)
     set_seed(args.seed)
@@ -98,10 +101,10 @@ def main(args):
     # tokenizer info
     # tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     # tokenizer.pad_token = tokenizer.eos_token
-    # tokenizer.padding_side = "left"
-    # print(f'tokenizer.padding_side {tokenizer.padding_side}')
+    tokenizer.padding_side = "left"
+    print(f'tokenizer.padding_side {tokenizer.padding_side} !!!!!')
 
-    collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
+    collator = DataCollatorWithPadding(tokenizer)#, pad_to_multiple_of=8)
 
     dict_tokenized_demonstations = llama_tokenize_demonstrations(tokenizer, DEMONSTRATIONS_DOCS_ANON, args.seed)
     
@@ -111,37 +114,53 @@ def main(args):
     print(f'device {device}')
 
     code_dataset = Code_llm_dataset(all_input_ids, all_attention_mask, all_qids)
-    batch_size = 6
-    print(f'batch_size {batch_size}')
-    dataloader = DataLoader(code_dataset,batch_size=batch_size, collate_fn=collator, shuffle=True)
+    
     # if torch.cuda.is_bf16_supported():
     #     print('bf16 suported')
 
     # PROMPT = '[INST] Your task is to write 5 tests to check the correctness of a function that solves a programming problem. The tests must be between [TESTS] and [/TESTS] tags. You must write the comment "#Test case n:" on a separate line directly above each assert statement, where n represents the test case number, starting from 1 and increasing by one for each subsequent test case. Problem: Write a Python function to get the unique elements of a list. [/INST]'
-
-    model = AutoModelForCausalLM.from_pretrained(args.model_name)
-    model.to(device)
+    #! todo try bnf config
+    kwargs = {}
+    if args.bit4:
+        bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.bfloat16
+        )
+        kwargs['quantization_config'] = bnb_config
+    model = AutoModelForCausalLM.from_pretrained(args.model_name,load_in_8bit=args.bit8,device_map="auto",**kwargs)
     
+    if args.better_transformer:
+        model = model.to_bettertransformer()
+
+    if not (args.bit8 or args.bit4):
+        model.to(device) # not needed for 4bit and 8bit
+
+    dataloader = DataLoader(code_dataset,batch_size=args.batch_size, collate_fn=collator, shuffle=True)
+
     # model.resize_token_embeddings(model.config.vocab_size + 1) # because we added pad_token
     all_generated_ids = []
     all_qids = []
     i = 0
+    max_new_tokens = args.max_gen_length
     print('before inference')
-    for batch in tqdm(dataloader):
-        input_ids = batch['input_ids'].to(device)
-        attention_mask = batch['attention_mask'].to(device)
-        # input_ids, attention_mask = input_ids[:2,:32], attention_mask[:2,:32]
-
-        qids = batch['qids']
-        print('before generate')
-        print(f"Model's device: {next(model.parameters()).device}")
-        generated_ids = model.generate(input_ids, attention_mask= attention_mask)
-        all_qids.extend(qids)
-        all_generated_ids.extend(generated_ids)
-        i+=1
-        if i > 10:
-            break
+    with torch.backends.cuda.sdp_kernel(enable_flash=False, enable_math=False, enable_mem_efficient=False):
+        for batch in tqdm(dataloader):
+            input_ids = batch['input_ids'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
+            # input_ids, attention_mask = input_ids[:2,:32], attention_mask[:2,:32]
+            # tokenizer.batch_decode(input_ids)[0]
+            qids = batch['qids']
+            generated_ids = model.generate(input_ids, attention_mask = attention_mask,max_new_tokens=max_new_tokens)
+            all_qids.extend(qids)
+            all_generated_ids.extend(generated_ids[:,-max_new_tokens:])
+            i+=1
+            if i > 4:
+                break
     
+        print('GB ',bytes_to_giga_bytes(torch.cuda.max_memory_allocated()))
+
     dict_generated = {}
     for qid, generated_ids in zip(all_qids, all_generated_ids):
         qid= qid.item()
@@ -149,6 +168,7 @@ def main(args):
         dict_generated[query] = tokenizer.decode(generated_ids, skip_special_tokens=True)
    
     random_identifier = str(uuid.uuid4())[:5]
+    print(f'random id {random_identifier}')
     if 'codellama' in args.model_name or 'WizardLM' in args.model_name:
         index_name =  args.model_name.index('/')
         file_name = random_identifier+'_'+args.model_name[index_name+1:]+'.json'
@@ -171,6 +191,11 @@ if __name__=='__main__':
     parser.add_argument('--tokenizer', type=str, default="WizardLM/WizardCoder-Python-7B-V1.0")
     parser.add_argument('--dem_method', type=str, default="constant") # always the same four
     parser.add_argument('--seed',type=int, default=0)
+    parser.add_argument('--batch_size',type=int, default=1)
     parser.add_argument('--num_demonstrations',type=int, default=4)
+    parser.add_argument('--max_gen_length',type=int, default=5)
+    parser.add_argument('--bit8',action='store_true') # default false now!
+    parser.add_argument('--bit4',action='store_true') # default false now!
+    parser.add_argument('--better_transformer',action='store_true') # default false now!
     args = parser.parse_args()
     main(args)

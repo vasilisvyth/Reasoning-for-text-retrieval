@@ -3,7 +3,7 @@ INSTRUCTION_DOCS_ANON = 'You need to first break the question step by step into 
 
 DEMONSTRATIONS_DOCS_ANON = {0:{
 'ex1':'''
-Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\n1998 fiction books based on Doctor Who
+### Instruction:\n1998 fiction books based on Doctor Who
 
 ### Response:
 question_0 = "find 1998 books"
@@ -16,7 +16,7 @@ ans = docs_0 and docs_1 and docs_2
 
 ''',
 'ex2':'''
-Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\nFilms based on works by Stanisław Lem
+### Instruction:\nFilms based on works by Stanisław Lem
 
 ### Response:
 question_0 = "find Films based on works by Stanisław Lem"
@@ -25,7 +25,7 @@ ans = docs_0
 
 ''',
 'ex3':'''
-Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\nIndian musical and Malayalam films remade in other languages but not featuring an item number
+### Instruction:\nIndian musical and Malayalam films remade in other languages but not featuring an item number
 
 ### Response:
 question_0 = "find Indian musical films remade in other languages"
@@ -38,7 +38,7 @@ ans = docs_0 and docs_1 and not docs_2
 
 ''',
 'ex4':'''
-Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\nWhat are Vultures or Eocene reptiles of South America or Extinct animals of Peru?
+### Instruction:\nWhat are Vultures or Eocene reptiles of South America or Extinct animals of Peru?
 
 ### Response:
 question_0 = "What are Vultures?"
@@ -51,7 +51,7 @@ ans = docs_0 or docs_1 or docs_2
 
 ''',
 'ex5':'''
-Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\nBirds described in 1991 or Birds of the Western Province (Solomon Islands)
+### Instruction:\nBirds described in 1991 or Birds of the Western Province (Solomon Islands)
 
 ### Response:
 question_0 = "find Birds described in 1991"
@@ -62,7 +62,7 @@ ans = docs_0 or docs_1
 
 ''',
 'ex6':'''
-Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\nNew American Library Books about the military
+### Instruction:\nNew American Library Books about the military
 
 ### Response:
 question_0 = "find New American Library Books"
@@ -73,7 +73,7 @@ ans = docs_0 and docs_1
 
 ''',
 'ex0':'''
-Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\nVertebrate animals from Rwanda that are not also Sub-Saharan African mammals
+### Instruction:\nVertebrate animals from Rwanda that are not also Sub-Saharan African mammals
 
 ### Response:
 question_0 = "find Vertebrate animals from Rwanda"
