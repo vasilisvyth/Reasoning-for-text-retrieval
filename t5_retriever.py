@@ -50,6 +50,11 @@ def main(args):
     # load docs
     doc_text_map, doc_title_map = read_docs(os.path.join(args.data_dir,'doc_text_list.pickle'), os.path.join(args.data_dir,'doc_title_map.tsv'))
 
+    # check how many docs are positive docs in the training set!
+    # docs_in_training = set()
+    # for q_id, d_id in train_query_ids_doc_ids:
+    #     docs_in_training.add(int(d_id))
+
     # Remove queries with metadata!= '_' from the dictionary
     if not args.use_complex_queries:
         print(f'Training set Total queries before removing complex queries: {len(train_dict_query_ids_queries)}')
@@ -81,23 +86,9 @@ def main(args):
         remove_complex_queries(examples_val, val_dict_query_ids_queries)
         print(f'Val set Total queries after removing complex queries: {len(val_dict_query_ids_queries)}')
 
-    # from analyze_retriever import calc_mrec_rec
-    # from run_eval import calc_f1_pr_rec
-    # from tools import DocumentFinder
-    # from quest.common.example_utils import Example
-    # DocumentFinder.k= 1000
-    # pred_examples = []
-    # for exam in examples_val:
-    #     current_docs_ids = DocumentFinder.find_docs(exam.query, exam.query)
-    #     unsorted_pred_doc_titles = [doc_title_map[id] for id in current_docs_ids]
-
-    #     tmp_pred_example = Example(query=exam.query, docs=unsorted_pred_doc_titles)
-    #     pred_examples.append(tmp_pred_example)
-
-    # print('ORIGINAL QUERIES RESULTS')
-    # calc_mrec_rec(examples_val, pred_examples)
-    # calc_f1_pr_rec(examples_val, pred_examples)
-    # exit()
+    if 'bge' in args.tokenizer:
+        train_queries = ['Represent this sentence for searching relevant passages:'+query for query in train_queries]
+    
 
     # create dataset for training
     train_pair_dataset = PairDataset(train_query_ids, train_doc_ids, train_queries, train_docs,examples_train_aug)
@@ -202,13 +193,13 @@ if __name__=='__main__':
     parser.add_argument(
         "--pretrained",
         type=str,
-        default="google/t5-v1_1-small",
+        default="BAAI/bge-large-en-v1.5", #google/t5-v1_1-small
         help="Pretrained checkpoint for the base model",
     )
     parser.add_argument(
         "--tokenizer",
         type=str,
-        default="google/t5-v1_1-base",
+        default="BAAI/bge-large-en-v1.5",
         help="Pretrained checkpoint for the base model",
     )
     parser.add_argument(

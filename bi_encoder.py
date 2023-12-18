@@ -9,8 +9,16 @@ class DenseBiEncoder(nn.Module):
         super().__init__()
         # if 't5' in model_name_or_dir:
             # check https://github.com/UKPLab/sentence-transformers/blob/master/sentence_transformers/models/Transformer.py#L53
-        T5EncoderModel._keys_to_ignore_on_load_unexpected = ["decoder.*"] #decoder and anything after it, probably not needed at all
-        self.model = T5EncoderModel.from_pretrained(model_name_or_dir)
+        if 't5' in model_name_or_dir:
+            T5EncoderModel._keys_to_ignore_on_load_unexpected = ["decoder.*"]  # decoder and anything after it, probably not needed at all
+            self.model = T5EncoderModel.from_pretrained(model_name_or_dir)
+            self.encode_fn = self.encode_mean_polling  
+        else:
+            self.model = AutoModel.from_pretrained(model_name_or_dir)
+            self.encode_fn = self.encode_cls  # Use encode for other models
+
+
+
         # else:
         #     self.model = AutoModel.from_pretrained(model_name_or_dir)
         self.scale_logits, self.right_loss = scale_logits, right_loss
@@ -19,7 +27,7 @@ class DenseBiEncoder(nn.Module):
         num_parameters = sum(p.numel() for p in self.model.parameters())
         print(f"Number of parameters in {model_name_or_dir}: {num_parameters}")
         
-    def encode(self, input_ids, attention_mask, **kwargs):
+    def encode_mean_polling(self, input_ids, attention_mask, **kwargs):
 
         hidden_states = self.model(input_ids, attention_mask,**kwargs).last_hidden_state # [batch_size, max_sentence_length, hidden_dim]
         masked_hidden_states = attention_mask.unsqueeze(dim=-1)*hidden_states # [batch_size, max_sentence_length, hidden_dim]
@@ -28,18 +36,25 @@ class DenseBiEncoder(nn.Module):
         mean_hidden_states = sum_hidden_states / masked_count.unsqueeze(dim=-1) # [batch_size, hidden_dim]
         return mean_hidden_states
 
+    def encode_cls(self, input_ids, attention_mask, **kwargs):
+        model_output = self.model(input_ids, attention_mask)
+        # Perform pooling. In this case, cls pooling.
+        sentence_embeddings = model_output[0][:, 0] # batch_size, hidden_dim
+        sentence_embeddings = torch.nn.functional.normalize(sentence_embeddings, p=2, dim=1)
+        return sentence_embeddings
+
     def score_all_combinations(self, queries, docs):
 
-        q =self.encode(queries.input_ids, queries.attention_mask) # batch_size, hidden_dim
-        v = self.encode(docs.input_ids, docs.attention_mask) # batch_size, hidden_dim
+        q =self.encode_fn(queries.input_ids, queries.attention_mask) # batch_size, hidden_dim
+        v = self.encode_fn(docs.input_ids, docs.attention_mask) # batch_size, hidden_dim
         v = torch.transpose(v,0,1) # hidden_dim, batch_size
         scores = torch.matmul(q, v) # batch_size, batch_size
         return scores
     
     def score_pairs(self, queries, docs):
 
-        q =self.encode(queries.input_ids, queries.attention_mask) # batch_size, hidden_dim
-        v = self.encode(docs.input_ids, docs.attention_mask) # batch_size, hidden_dim
+        q =self.encode_fn(queries.input_ids, queries.attention_mask) # batch_size, hidden_dim
+        v = self.encode_fn(docs.input_ids, docs.attention_mask) # batch_size, hidden_dim
         scores = (q * v).sum(dim=-1)
         return scores
 

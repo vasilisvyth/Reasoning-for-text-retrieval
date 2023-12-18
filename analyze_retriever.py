@@ -97,6 +97,7 @@ def calc_mrec_rec(gold_examples, pred_examples):
 
   avg_mrecall_vals = {k:0  for k in K_VALS}
   avg_recall_vals = {k:0  for k in K_VALS}
+  all_recall_per_template = {}
   for k in K_VALS:
     print("MRecall@%s" % k)
 
@@ -105,6 +106,9 @@ def calc_mrec_rec(gold_examples, pred_examples):
     print("Avg. Recall@%s" % k)
     recall_avg_all  = eval_utils.print_avg(gold_examples, recall_vals[k])
     recall_avg_by_template  = eval_utils.print_avg_by_template(gold_examples, recall_vals[k])
+
+    recall_avg_by_template = {f'R@{str(k)}:{key}': value for key, value in recall_avg_by_template.items()}
+    all_recall_per_template.update(recall_avg_by_template)
     # print('!'*17)
     # print('returned')
     # print('recall_avg_all', recall_avg_all)
@@ -112,7 +116,7 @@ def calc_mrec_rec(gold_examples, pred_examples):
     avg_recall_vals[k] = recall_avg_all['all']
     avg_mrecall_vals[k] = mrecall_avg_all['all'] # I swapped order
     
-  return avg_recall_vals, avg_mrecall_vals
+  return avg_recall_vals, avg_mrecall_vals, all_recall_per_template
 
 
 def main(unused_argv):

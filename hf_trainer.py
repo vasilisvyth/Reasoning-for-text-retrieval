@@ -68,14 +68,14 @@ class HFTrainer(Trainer):
                 att_mask = batch['attention_mask'].to(device)
                 # if self.fp_16:
                 
-                docs_scores = self.model.encode(input_ids =in_ids, attention_mask = att_mask).cpu()
+                docs_scores = self.model.encode_fn(input_ids =in_ids, attention_mask = att_mask).cpu()
                 # docs_scores = torch.rand(len(dids))
                 # if i == 0:
                 #     print(docs_scores[0])
 
                 all_dids.extend(dids)
                 all_docs_scores.append(docs_scores)
-            
+                
             # print('BREAK DOC')
             
         print('SAVE DOCS SCORES!!!')
@@ -101,7 +101,7 @@ class HFTrainer(Trainer):
             att_mask = batch['attention_mask']
             att_mask = att_mask.to(device)
             with torch.no_grad(): #torch.cuda.amp.autocast(), 
-                queries_scores = self.model.encode(input_ids =in_ids, attention_mask = att_mask).cpu()
+                queries_scores = self.model.encode_fn(input_ids =in_ids, attention_mask = att_mask).cpu()
 
             # queries_scores = torch.rand(len(dids))
             
@@ -120,12 +120,12 @@ class HFTrainer(Trainer):
                     print('scores ',scores[:10])
                     print('doc_texts', doc_texts)
                 # scores
-
+                # query_text = query_text.replace('Represent this sentence for searching relevant passages:','')
                 example = Example(query=query_text, docs=doc_texts, scores=scores)
                 all_pred_examples.append(example)
             
 
-        avg_recall_vals, avg_mrecall_vals = calc_mrec_rec(gold_examples, all_pred_examples)
+        avg_recall_vals, avg_mrecall_vals, _ = calc_mrec_rec(gold_examples, all_pred_examples)
 
         self.model.train()
   
