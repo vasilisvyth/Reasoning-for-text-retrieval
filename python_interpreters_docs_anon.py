@@ -11,12 +11,19 @@ from quest.common import example_utils
 from quest.common.example_utils import Example
 import pickle
 import numpy as np
-from tools import DocumentFinder
+import torch
+from tools import DocumentFinder, Operations
 from analyze_retriever import calc_mrec_rec
 from quest.common import document_utils
 from tqdm import tqdm
 from collections import defaultdict
 import matplotlib.pyplot as plt
+from bi_encoder import DenseBiEncoder
+from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer
+from utils import load_pickle
+from seeds import set_seed
+from utils import create_pickle, update_results
 
 def find_all_positions(text, substring):
     positions = []
@@ -197,41 +204,103 @@ def calculate_score(list_answer, var_dict, not_subqs, query, ind_scores):
     unsorted_pred_doc_titles = [documents[idx].title for idx in unsorted_doc_ids]
     results_len.append(len(unsorted_pred_doc_titles))
 
+
+def current_program(program):
+    '''
+    the last 3 arguments are added for debugging purpose
+    '''
+  
+    answer_index = program.index('ans = ')
+    answer_code = program[answer_index:]
+
+    # if results_json[query]['template'] != '_ that are also _':
+    #     continue
+    answer_code_with_sets = set_conversion(answer_code)
+    final_program = program[:answer_index] + answer_code_with_sets+"\n"
+
+    var_dict = safe_execute(final_program)
+
+    return var_dict
+
+def preprocess_find_docs_call(query, result):
+    replacement_query = query.replace("'", "\\'")  # Escape single quotes
+    new_result = result.replace("find_docs(",f"DocumentFinder.find_docs('{replacement_query}',")
+    return new_result
+
 def main(args):
+    set_seed(0)
     print_args(args)
 
+    with open('checkpoints/4913e0dd-b8/all_dids_check_13500.pkl','rb') as f:
+        loaded_object = pickle.load(f)
+        assert(loaded_object == [i for i in range(len(loaded_object))])
+    tokenizer = AutoTokenizer.from_pretrained('google/t5-v1_1-base')
     # load docs
     path_doc_text_list = os.path.join(args.data_dir,'doc_text_list.pickle')
     path_doc_title_map = os.path.join(args.data_dir,'doc_title_map.tsv')
     doc_text_map, doc_title_map = read_docs(path_doc_text_list, path_doc_title_map)
     documents = document_utils.read_documents("quest_data\\documents.jsonl")
-
-    # tensors = {}
-    # from safetensors import safe_open
-    # with safe_open('checkpoints/89a4eb2b-b3/checkpoint-6000/model.safetensors', framework="pt", device="cpu") as f:
-    #     for key in f.keys():
-    #         tensors[key] = f.get_tensor(key)
-
+    title_doc_map = {value: key for key, value in doc_title_map.items()}
 
     path_test = os.path.join(args.data_dir,args.gold_examples_dir)
     gold_examples = example_utils.read_examples(path_test)
+    
 
-    DocumentFinder.k= 3000#args.k
-    DocumentFinder.method = 'bm25'
-    # pred_examples = []
-    # for exam in gold_examples:
-    #     current_docs_ids = DocumentFinder.find_docs(exam.query, exam.query)
-    #     unsorted_pred_doc_titles = [doc_title_map[id] for id in current_docs_ids]
+    # new_gold_examples = []
+    # for qid, example in enumerate(gold_examples):
+    #     # if qid in [74, 108, 122, 130, 523, 526, 535,77, 85, 116, 129, 529,537,80, 81, 83, 86, 87,92, 93, 96, 97, 102,
+    #     #     105, 109, 110,113, 117, 118, 119, 120, 121, 125, 524, 528, 530, 534, 539, 82]:
+    #     #     new_gold_examples.append(example)
 
-    #     tmp_pred_example = Example(query=exam.query, docs=unsorted_pred_doc_titles)
-    #     pred_examples.append(tmp_pred_example)
+    #     # if qid in [69,71,73,75, 78,79,84,88, 89, 90, 94, 95, 98, 101, 103, 104, 106, 114, 115, 123, 126, 525, 532, 533, 536, 538,91, 99, 112, 131, 132,
+    #     # 100,111,124,128]:
+    #     #     new_gold_examples.append(example)
+    #     # if qid in [621, 620, 616, 614, 612, 608, 599, 598, 590, 588, 587, 199, 195, 179, 177, 163,
+    #     #         622, 624, 625, 627, 635, 637, 639, 1007]:
+    #     #     new_gold_examples.append(example)
+    #     if example.template=='_'
+        
 
-    # print('ORIGINAL QUERIES RESULTS')
-    # calc_mrec_rec(gold_examples, pred_examples)
-    # calc_f1_pr_rec(gold_examples, pred_examples)
-    # print("Visual programming")
-    # DocumentFinder.results = {}
 
+    # model = DenseBiEncoder('checkpoints/da0656a7-f3/checkpoint-13500', False, False)
+    # docs = torch.load('checkpoints/da0656a7-f3/scores_docs_check_0.pt')
+    # tokenized_txt = tokenizer.encode_plus(doc_text_map[0], return_tensors='pt')
+    # input_ids, attention_mask = tokenized_txt['input_ids'], tokenized_txt['attention_mask']
+    # with torch.no_grad():
+    #     embed_doc = model.encode(input_ids, attention_mask)
+    # all_dids = load_pickle('checkpoints/da0656a7-f3/all_dids_check_0.pkl')
+    # pretrained = DenseBiEncoder('google/t5-v1_1-base', False, False)
+    # pretrained_embed_doc = pretrained.encode(input_ids, attention_mask)
+    METHOD = 'bge-large'
+    if METHOD =='bge-large':
+        doc_embs = np.load(os.path.join('checkpoints','bge-zero','zero_shot_t5_bge_large.npy'))
+        doc_embs = torch.from_numpy(doc_embs)
+        CHECKPOINT = 'BAAI/bge-large-en-v1.5'
+        use_sentence_transformer=True
+        normalize_embeddings=True
+        #DocumentFinder.init('BAAI/bge-large-en-v1.5', doc_embs, tokenizer, k=30000, method='bge-large', use_sentence_transformer=True, normalize_embeddings=True)
+    elif METHOD == 't5-base':
+        doc_embs = torch.load('checkpoints/4913e0dd-b8/scores_docs_check_13500.pt')
+        CHECKPOINT = 'checkpoints/4913e0dd-b8/checkpoint-13500/'
+        use_sentence_transformer=False
+        normalize_embeddings=False
+
+    RANK_CONSTANT = 60
+    K = 3000
+    replace_find = True
+    SCORE = f'1/({RANK_CONSTANT}+rank' #'emb'
+    THRESHOLD = 0.63 #'None'
+    DocumentFinder.init(CHECKPOINT, doc_embs, tokenizer, k=K, method=METHOD, replace_find = replace_find, use_sentence_transformer=use_sentence_transformer,
+                         normalize_embeddings=normalize_embeddings, score=SCORE, threshold=THRESHOLD)
+
+    data = {'and':'avg','or':'maximum','diff':'subtract','score':SCORE}
+    INFO = { 'model':METHOD,'checkpoint':CHECKPOINT,
+             'K':K,'threshold':THRESHOLD,'replace_find':replace_find
+    }
+    INFO.update(data)
+
+    Operations.init(data, RANK_CONSTANT)
+    args.gpt_results_dir = 'rand_5_complex_and_qhat.json'
     file=open(args.gpt_results_dir, "r")
     results_json = json.load(file)
     
@@ -244,66 +313,97 @@ def main(args):
     count_forgot = 0
     pred_examples = []
     results_len = []
+    new_gold_examples = []
     count_parenthesis = 0
     lens_per_template = defaultdict(list)
-    
-    for query in tqdm(results_json):
+    i = -1
+    for qid, query in enumerate(tqdm(results_json)):
         if not 'pred' in results_json[query]:
-            print('forgot sth')
+            # print('forgot sth')
             count_forgot +=1
+            continue
 
+        # if qid not in [74, 108, 122, 130, 523, 526, 535,77, 85, 116, 129, 529,537,80, 81, 83, 86, 87,92, 93, 96, 97, 102,
+        # 105, 109, 110,113, 117, 118, 119, 120, 121, 125, 524, 528, 530, 534, 539, 82]:
+        #     continue
+        # if qid not in [69,71,73,75, 78,79,84,88, 89, 90, 94, 95, 98, 101, 103, 104, 106, 114, 115, 123, 126, 525, 532, 533, 536, 538,91, 99, 112, 131, 132,
+        # 100,111,124,128]:
+        #     continue
+        # if qid not in [621, 620, 616, 614, 612, 608, 599, 598, 590, 588, 587, 199, 195, 179, 177, 163,
+        #         622, 624, 625, 627, 635, 637, 639, 1007]:
+        #     continue
         template_used = results_json[query]['template']
-        result = results_json[query]['pred']
-        replacement_query = query.replace("'", "\\'")  # Escape single quotes
 
-        new_result = result.replace("find_docs(",f"DocumentFinder.find_docs('{replacement_query}',")
+        # if template_used != '_':
+        #     continue
+
+        result = results_json[query]['pred']
+
+        new_result = preprocess_find_docs_call(query, result)
+        # new_result = new_result.replace('intersection(docs_2)','intersection(docs_2,docs_2)')
         program = synthesize_program(result = new_result, prefix = '')
+        # if not ' and ' in program:
+        #     continue
+
+        for ex in gold_examples:
+            if ex.query==query:
+                new_gold_examples.append(ex)
+
         if 'ans = ' not in program:
-            count_not_ans +=1
+            # count_not_ans +=1
             sorted_pred_doc_titles = []
         else:
-            answer_index = program.index('ans = ')
-            answer_code = program[answer_index:]
-
-
-            # len_par = find_all_positions(answer_code, '(')
-            # if len(len_par) > 1:
-            #     # print('count open par more than 1')
-            #     print(answer_code)
-
-            answer_code_with_sets = set_conversion(answer_code)
-            final_program = program[:answer_index] + answer_code_with_sets+"\n"
-            find_sets_logical_operators(answer_code)
-
-            var_dict = safe_execute(final_program)
+            var_dict = current_program(program)
 
             if var_dict is not None:
                 try:
+                    i+=1
                     ans = var_dict['ans']
                     sorted_items = sorted(ans.items(), key=lambda x: x[1], reverse=True)
-                     # Take the top k items
-                    top_k_keys = [key for key, _ in sorted_items[:1000]]
+                        # Take the top k items
+                    initial_top_k_keys = [key for key, _ in sorted_items]
+                    top_k_keys = initial_top_k_keys[:1000]
                     sorted_pred_doc_titles = [documents[idx].title for idx in top_k_keys]
+                    # dict_ranks = {}
+                    # for key in var_dict:
+                    #     if key.startswith('docs_'):
+                    #         dict_ranks[key] = list(var_dict[key].data.keys())
+                    # gold_ids = [title_doc_map[tmp_doc] for tmp_doc in new_gold_examples[i].docs]
 
+                    # gold_texts = [doc_text_map[id] for id in gold_ids]
+                    # predicted_texts = [doc_text_map[id] for id in top_k_keys]
                     lens_per_template[template_used].append(len(top_k_keys))
+
                 except AttributeError:
                     # Handle the case where ans is not a dictionary
                     print(f'original query {query}')
                     print(f"Error: {ans} is not a dictionary")
-                    print(final_program)
+                    # print(final_program)
                     sorted_pred_doc_titles = []
 
             else:
-                questions = [query]
-                count_bug +=1
+                # count_bug +=1
                 sorted_pred_doc_titles = []
-            
+
+        if sorted_pred_doc_titles == []:
+            count_bug +=1
         tmp_pred_example = Example(query=query, docs=sorted_pred_doc_titles)
         pred_examples.append(tmp_pred_example)
 
-    calc_f1_pr_rec(gold_examples, pred_examples)
-    calc_mrec_rec(gold_examples, pred_examples)
+    avg_prec, avg_rec, avg_f1 = calc_f1_pr_rec(new_gold_examples, pred_examples)
+
+    avg_scores = {'avg_prec':avg_prec['all'], 'avg_rec':avg_rec['all'], 'avg_f1':avg_f1['all']}
+    avg_recall_vals, avg_mrecall_vals, all_rec_per_template = calc_mrec_rec(new_gold_examples, pred_examples)
+
+    avg_recall_vals = {f'avg_R@{key}':value for key, value in avg_recall_vals.items()}
+    avg_mrecall_vals = {f'avg_MR@{key}':value for key, value in avg_mrecall_vals.items()}
+
     print(f'count bugs {count_bug}')
+    path_results_csv = os.path.join('checkpoints','results.csv')
+    update_results(path_results_csv, avg_recall_vals, avg_mrecall_vals, all_rec_per_template, avg_scores, INFO)
+
+    create_pickle(avg_recall_vals,'baseline_avg_rec.pickle')
+    create_pickle(avg_mrecall_vals,'baseline_avg_mrec.pickle')
 
     means = {key: np.mean(values) for key, values in lens_per_template.items()}
     std_devs = {key: np.std(values) for key, values in lens_per_template.items()}
@@ -323,6 +423,7 @@ def main(args):
     # Show the plot
     plt.show()
 
+    
 
 
     # with open('res_docs_anon_1000.pkl', 'wb') as file:
@@ -349,6 +450,7 @@ if __name__=='__main__':
     parser.add_argument('--data_dir', type=str, default="quest_data")
     parser.add_argument('--result_dir', type=str, default="res_docs_anon_1000.json")
     parser.add_argument('--gold_examples_dir', type=str, default='test.jsonl')
+    # parser.add_argument('--gold_examples_dir', type=str, default='test.jsonl')
     parser.add_argument('--k', type=int, default=1000)
     args = parser.parse_args()
     main(args)

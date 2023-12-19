@@ -23,7 +23,7 @@ docs_2 = find_docs(question_2)
 docs_3 = find_docs(question_3) 
 
 # Step 3. Combine the results to get the final answer (ans)
-ans = (docs_1.intersection(docs_2, docs_3)).difference(docs_0)
+ans = (docs_1 and docs_2 and docs_3) and not docs_0
 ```
 ''',
 'ex4':'''
@@ -38,7 +38,7 @@ docs_0 = find_docs(question_0)
 docs_1 = find_docs(question_1)
 
 # Step 3. Combine the results to get the final answer (ans)
-ans = docs_0.union(docs_1)
+ans = docs_0 or docs_1
 ```
 ''',
 'ex6':'''
@@ -53,7 +53,7 @@ docs_0 = find_docs(question_0)
 docs_1 = find_docs(question_1)
 
 # Step 3. Combine the results to get the final answer (ans)
-ans = docs_0.intersect(docs_1)
+ans = docs_0 and docs_1
 ```
 ''',
 'ex3':'''
@@ -85,7 +85,7 @@ docs_2 = find_docs(question_2)
 docs_3 = find_docs(question_3)
 
 # Step 3. Combine the results to get the final answer (ans)
-ans = (docs_0.intersection(docs_1,docs_2)).union(docs_0.intersection(docs_3, docs_2))
+ans = (docs_0 and docs_1 and docs_2) or (docs_0 and docs_3 and docs_2)
 ```
 '''
 }
