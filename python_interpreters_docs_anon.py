@@ -227,40 +227,100 @@ def preprocess_find_docs_call(query, result):
     new_result = result.replace("find_docs(",f"DocumentFinder.find_docs('{replacement_query}',")
     return new_result
 
+def create_results(new_gold_examples, pred_examples, count_bug, INFO):
+    avg_prec, avg_rec, avg_f1 = calc_f1_pr_rec(new_gold_examples, pred_examples)
+
+    avg_scores = {'avg_prec':avg_prec['all'], 'avg_rec':avg_rec['all'], 'avg_f1':avg_f1['all']}
+    avg_recall_vals, avg_mrecall_vals, all_rec_per_template = calc_mrec_rec(new_gold_examples, pred_examples)
+
+    avg_recall_vals = {f'avg_R@{key}':value for key, value in avg_recall_vals.items()}
+    avg_mrecall_vals = {f'avg_MR@{key}':value for key, value in avg_mrecall_vals.items()}
+
+    print(f'count bugs {count_bug}')
+    path_results_csv = os.path.join('checkpoints','results.csv')
+    update_results(path_results_csv, avg_recall_vals, avg_mrecall_vals, all_rec_per_template, avg_scores, INFO)
+
+    create_pickle(avg_recall_vals,'baseline_avg_rec.pickle')
+    create_pickle(avg_mrecall_vals,'baseline_avg_mrec.pickle')
+
+def plot_lens(lens_per_template):
+    means = {key: np.mean(values) for key, values in lens_per_template.items()}
+    std_devs = {key: np.std(values) for key, values in lens_per_template.items()}
+
+    # Create a bar plot
+    fig, ax = plt.subplots()
+
+    # Plotting the means
+    ax.bar(means.keys(), means.values(), yerr=std_devs.values(), capsize=5, color='skyblue', label='Mean')
+
+    # Adding labels and title
+    ax.set_ylabel('Retrieved docs per template')
+    ax.set_xlabel('Templates')
+    ax.set_title('Mean and Standard Deviation for Each Key')
+    ax.legend()
+
+    # Show the plot
+    plt.show()
+
+
+
 def main(args):
     set_seed(0)
     print_args(args)
 
-    with open('checkpoints/4913e0dd-b8/all_dids_check_13500.pkl','rb') as f:
-        loaded_object = pickle.load(f)
-        assert(loaded_object == [i for i in range(len(loaded_object))])
+    # with open('checkpoints/4913e0dd-b8/all_dids_check_13500.pkl','rb') as f:
+    #     loaded_object = pickle.load(f)
+    #     assert(loaded_object == [i for i in range(len(loaded_object))])
     tokenizer = AutoTokenizer.from_pretrained('google/t5-v1_1-base')
     # load docs
     path_doc_text_list = os.path.join(args.data_dir,'doc_text_list.pickle')
     path_doc_title_map = os.path.join(args.data_dir,'doc_title_map.tsv')
     doc_text_map, doc_title_map = read_docs(path_doc_text_list, path_doc_title_map)
-    documents = document_utils.read_documents("quest_data\\documents.jsonl")
+
+    path_doc = os.path.join('quest_data','documents.jsonl')
+    documents = document_utils.read_documents(path_doc)
     title_doc_map = {value: key for key, value in doc_title_map.items()}
 
     path_test = os.path.join(args.data_dir,args.gold_examples_dir)
     gold_examples = example_utils.read_examples(path_test)
-    
+    args.oracle_docs = True#True
+    if args.oracle_docs:
+        domains = set() # 
+        counter = 0
+        count_new_docs = 0
+        oracle_examples_dict = {}
+        new_gold_examples = []
+        for example in gold_examples:
+            attributions_dict = example.metadata.attributions
+            if attributions_dict is None:
+                counter +=1
+                domains.add(example.metadata.domain)
+                continue
+            assert(len(example.docs) == len(attributions_dict))
 
-    # new_gold_examples = []
-    # for qid, example in enumerate(gold_examples):
-    #     # if qid in [74, 108, 122, 130, 523, 526, 535,77, 85, 116, 129, 529,537,80, 81, 83, 86, 87,92, 93, 96, 97, 102,
-    #     #     105, 109, 110,113, 117, 118, 119, 120, 121, 125, 524, 528, 530, 534, 539, 82]:
-    #     #     new_gold_examples.append(example)
+            new_gold_examples.append(example)
+            oracle_examples_dict[example.query] = {}
+            a=1
+            for doc_title in attributions_dict: #dict
+                doc_id = title_doc_map[doc_title]
+                original_doc_text = doc_text_map[doc_id] 
 
-    #     # if qid in [69,71,73,75, 78,79,84,88, 89, 90, 94, 95, 98, 101, 103, 104, 106, 114, 115, 123, 126, 525, 532, 533, 536, 538,91, 99, 112, 131, 132,
-    #     # 100,111,124,128]:
-    #     #     new_gold_examples.append(example)
-    #     # if qid in [621, 620, 616, 614, 612, 608, 599, 598, 590, 588, 587, 199, 195, 179, 177, 163,
-    #     #         622, 624, 625, 627, 635, 637, 639, 1007]:
-    #     #     new_gold_examples.append(example)
-    #     if example.template=='_'
-        
+                query_doc_list = [el for el in attributions_dict[doc_title] if el != None]
+                new_doc_text = '' # sometimes duplicate doc substring  
+                for i in range(len(query_doc_list)):
+                    for subquery in query_doc_list[i]: #dict
+                        doc_substring = query_doc_list[i][subquery]
+                        new_doc_text += doc_substring
 
+                if new_doc_text != '':
+                    count_new_docs +=1
+                    doc_id = title_doc_map[doc_title]
+
+                    oracle_examples_dict[example.query][doc_id]  = new_doc_text
+        gold_examples = new_gold_examples
+    else:
+        oracle_examples_dict = None
+    a=1         
 
     # model = DenseBiEncoder('checkpoints/da0656a7-f3/checkpoint-13500', False, False)
     # docs = torch.load('checkpoints/da0656a7-f3/scores_docs_check_0.pt')
@@ -272,6 +332,9 @@ def main(args):
     # pretrained = DenseBiEncoder('google/t5-v1_1-base', False, False)
     # pretrained_embed_doc = pretrained.encode(input_ids, attention_mask)
     METHOD = 'bge-large'
+    use_sentence_transformer=False
+    normalize_embeddings=False
+    doc_embs = None
     if METHOD =='bge-large':
         doc_embs = np.load(os.path.join('checkpoints','bge-zero','zero_shot_t5_bge_large.npy'))
         doc_embs = torch.from_numpy(doc_embs)
@@ -282,25 +345,27 @@ def main(args):
     elif METHOD == 't5-base':
         doc_embs = torch.load('checkpoints/4913e0dd-b8/scores_docs_check_13500.pt')
         CHECKPOINT = 'checkpoints/4913e0dd-b8/checkpoint-13500/'
-        use_sentence_transformer=False
-        normalize_embeddings=False
+    else:
+        CHECKPOINT = 'dum_bm25_obj.pickle'
+
+    args.gpt_results_dir = 'docs_anon.json'
 
     RANK_CONSTANT = 60
-    K = 3000
+    K = 30000
     replace_find = True
-    SCORE = f'1/({RANK_CONSTANT}+rank' #'emb'
-    THRESHOLD = 0.63 #'None'
+    SCORE = f'1/({RANK_CONSTANT}+rank' # 'emb' #
+    THRESHOLD = 0.64 #'None'
     DocumentFinder.init(CHECKPOINT, doc_embs, tokenizer, k=K, method=METHOD, replace_find = replace_find, use_sentence_transformer=use_sentence_transformer,
-                         normalize_embeddings=normalize_embeddings, score=SCORE, threshold=THRESHOLD)
+                         normalize_embeddings=normalize_embeddings, score=SCORE, threshold=THRESHOLD,oracle_examples_dict=oracle_examples_dict)
 
     data = {'and':'avg','or':'maximum','diff':'subtract','score':SCORE}
     INFO = { 'model':METHOD,'checkpoint':CHECKPOINT,
-             'K':K,'threshold':THRESHOLD,'replace_find':replace_find
+             'K':K,'threshold':THRESHOLD,'replace_find':replace_find,'template':args.gpt_results_dir
     }
     INFO.update(data)
 
     Operations.init(data, RANK_CONSTANT)
-    args.gpt_results_dir = 'rand_5_complex_and_qhat.json'
+    
     file=open(args.gpt_results_dir, "r")
     results_json = json.load(file)
     
@@ -317,25 +382,16 @@ def main(args):
     count_parenthesis = 0
     lens_per_template = defaultdict(list)
     i = -1
-    for qid, query in enumerate(tqdm(results_json)):
+    # for qid, query in enumerate(tqdm(results_json)):
+
+    for j, ex in enumerate(tqdm(gold_examples)):
+        query = ex.query
         if not 'pred' in results_json[query]:
             # print('forgot sth')
             count_forgot +=1
             continue
-
-        # if qid not in [74, 108, 122, 130, 523, 526, 535,77, 85, 116, 129, 529,537,80, 81, 83, 86, 87,92, 93, 96, 97, 102,
-        # 105, 109, 110,113, 117, 118, 119, 120, 121, 125, 524, 528, 530, 534, 539, 82]:
-        #     continue
-        # if qid not in [69,71,73,75, 78,79,84,88, 89, 90, 94, 95, 98, 101, 103, 104, 106, 114, 115, 123, 126, 525, 532, 533, 536, 538,91, 99, 112, 131, 132,
-        # 100,111,124,128]:
-        #     continue
-        # if qid not in [621, 620, 616, 614, 612, 608, 599, 598, 590, 588, 587, 199, 195, 179, 177, 163,
-        #         622, 624, 625, 627, 635, 637, 639, 1007]:
-        #     continue
+        
         template_used = results_json[query]['template']
-
-        # if template_used != '_':
-        #     continue
 
         result = results_json[query]['pred']
 
@@ -345,14 +401,13 @@ def main(args):
         # if not ' and ' in program:
         #     continue
 
-        for ex in gold_examples:
-            if ex.query==query:
-                new_gold_examples.append(ex)
-
         if 'ans = ' not in program:
             # count_not_ans +=1
             sorted_pred_doc_titles = []
         else:
+            
+            
+
             var_dict = current_program(program)
 
             if var_dict is not None:
@@ -368,6 +423,8 @@ def main(args):
                     # for key in var_dict:
                     #     if key.startswith('docs_'):
                     #         dict_ranks[key] = list(var_dict[key].data.keys())
+                    #         new_gold_examples.append(curr_ex)
+
                     # gold_ids = [title_doc_map[tmp_doc] for tmp_doc in new_gold_examples[i].docs]
 
                     # gold_texts = [doc_text_map[id] for id in gold_ids]
@@ -390,40 +447,11 @@ def main(args):
         tmp_pred_example = Example(query=query, docs=sorted_pred_doc_titles)
         pred_examples.append(tmp_pred_example)
 
-    avg_prec, avg_rec, avg_f1 = calc_f1_pr_rec(new_gold_examples, pred_examples)
-
-    avg_scores = {'avg_prec':avg_prec['all'], 'avg_rec':avg_rec['all'], 'avg_f1':avg_f1['all']}
-    avg_recall_vals, avg_mrecall_vals, all_rec_per_template = calc_mrec_rec(new_gold_examples, pred_examples)
-
-    avg_recall_vals = {f'avg_R@{key}':value for key, value in avg_recall_vals.items()}
-    avg_mrecall_vals = {f'avg_MR@{key}':value for key, value in avg_mrecall_vals.items()}
-
-    print(f'count bugs {count_bug}')
-    path_results_csv = os.path.join('checkpoints','results.csv')
-    update_results(path_results_csv, avg_recall_vals, avg_mrecall_vals, all_rec_per_template, avg_scores, INFO)
-
-    create_pickle(avg_recall_vals,'baseline_avg_rec.pickle')
-    create_pickle(avg_mrecall_vals,'baseline_avg_mrec.pickle')
-
-    means = {key: np.mean(values) for key, values in lens_per_template.items()}
-    std_devs = {key: np.std(values) for key, values in lens_per_template.items()}
-
-    # Create a bar plot
-    fig, ax = plt.subplots()
-
-    # Plotting the means
-    ax.bar(means.keys(), means.values(), yerr=std_devs.values(), capsize=5, color='skyblue', label='Mean')
-
-    # Adding labels and title
-    ax.set_ylabel('Retrieved docs per template')
-    ax.set_xlabel('Templates')
-    ax.set_title('Mean and Standard Deviation for Each Key')
-    ax.legend()
-
-    # Show the plot
-    plt.show()
-
     
+    
+    
+    create_results(gold_examples, pred_examples, count_bug, INFO)
+    plot_lens(lens_per_template)
 
 
     # with open('res_docs_anon_1000.pkl', 'wb') as file:
@@ -450,6 +478,7 @@ if __name__=='__main__':
     parser.add_argument('--data_dir', type=str, default="quest_data")
     parser.add_argument('--result_dir', type=str, default="res_docs_anon_1000.json")
     parser.add_argument('--gold_examples_dir', type=str, default='test.jsonl')
+    parser.add_argument('--oracle_docs',action='store_true') # default false now!
     # parser.add_argument('--gold_examples_dir', type=str, default='test.jsonl')
     parser.add_argument('--k', type=int, default=1000)
     args = parser.parse_args()

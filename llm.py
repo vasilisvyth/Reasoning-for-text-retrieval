@@ -1,8 +1,15 @@
-from vllm import LLM, SamplingParams
+try:
+    from vllm import LLM, SamplingParams
+    # Rest of your code that uses the library
+except ImportError:
+    print("vllm library is not installed. You need a cuda")
+
+import time
 from quest.common import example_utils
 import random
 from template_construction import create_rand_demonstrations, concat_demonstations, concat_test2prompt
 from templates_wizard_lm import INSTRUCTION_DOCS_ANON, DEMONSTRATIONS_DOCS_ANON, TEST_TEMPLATE_DOCS_ANON
+from templates_code_llama import INSTRUCTION_USER_ASSISTANT, DEMONSTRATIONS_USER_ASSISTANT, TEST_TEMPLATE_USER_ASSISTANT
 import argparse
 import torch
 import os
@@ -19,6 +26,7 @@ from prepare_dataset import read_queries
 from collections import Counter
 from generate_code import print_args
 from collections import defaultdict
+from utils import tokenize_user_assistant
 
 from utils import print_args, tokenize_demonstrations,tokenize_data, bytes_to_giga_bytes, create_pickle, load_pickle
 
@@ -50,8 +58,8 @@ class Codellama():
         cls.llm = LLM(
             model=model_name,
             dtype="float16",
-            trust_remote_code=True,
-            tokenizer=model_name,#"hf-internal-testing/llama-tokenizer",
+            # trust_remote_code=True,
+            # tokenizer=model_name,#"hf-internal-testing/llama-tokenizer",
             max_num_batched_tokens=max_num_batched_tokens, tensor_parallel_size=1)
 
     @classmethod
@@ -69,14 +77,14 @@ def init_gpt(model_name, max_input_tokens):
         Wizardlm.init(model_name, max_input_tokens)
     elif 'codellama' in model_name:
         Codellama.init(model_name, max_input_tokens)
+    print('initialization done')
 
 def main(args):
+    # args.user_assistant = True
     print_args(args)
     set_seed(args.seed)
-    obj=load_pickle('76620_WizardCoder-Python-7B-V1.0.pickle')
-    print(obj)
-    print(obj[0])
 
+    # obj = load_pickle('8a349_WizardCoder-Python-7B-V1.0.pickle')
 
     path = os.path.join(args.data_dir,args.test_file)
 
@@ -92,13 +100,17 @@ def main(args):
 
     collator = DataCollatorWithPadding(tokenizer)#, pad_to_multiple_of=8)
 
-    dict_tokenized_demonstations = tokenize_demonstrations(tokenizer, DEMONSTRATIONS_DOCS_ANON, args.seed)
-    
-    all_input_ids, all_attention_mask, all_qids = tokenize_data(test_dict_query_ids_queries, tokenizer, dict_tokenized_demonstations, args)
+    if args.user_assistant:
+        all_input_ids, all_attention_mask, all_qids = tokenize_user_assistant(INSTRUCTION_USER_ASSISTANT, DEMONSTRATIONS_USER_ASSISTANT, TEST_TEMPLATE_USER_ASSISTANT, test_dict_query_ids_queries, args, tokenizer)
+    else:
+        dict_tokenized_demonstations = tokenize_demonstrations(tokenizer, DEMONSTRATIONS_DOCS_ANON, args.seed)
+        all_input_ids, all_attention_mask, all_qids = tokenize_data(test_dict_query_ids_queries, tokenizer, dict_tokenized_demonstations, args, INSTRUCTION_DOCS_ANON)
+
 
     init_gpt(args.model_name, args.max_num_batched_tokens)
     K = 30
     all_input_ids = all_input_ids[:K]
+
     print(f'take the first {K} examples ')
     if 'WizardLM' in args.model_name:
         completions = Wizardlm.generate(prompt_token_ids = all_input_ids, max_new_tokens = args.max_gen_length)
@@ -110,16 +122,16 @@ def main(args):
 
     dict_generated = {}
     for completion in completions:
-        request_id = completion.request_id
+        request_id = int(completion.request_id)
         query = test_dict_query_ids_queries[request_id]
         dict_generated[query] = []
-        for output in completion.output:
+        for output in completion.outputs:
             dict_generated[query].append(output.text)
 
     index_name =  args.model_name.index('/')
     random_identifier = str(uuid.uuid4())[:5]
     print(f'random id {random_identifier}')
-    file_name = random_identifier+'_'+args.model_name[index_name+1:]+'.pickle'
+    file_name = random_identifier+'_'+args.model_name[index_name+1:]+'.json'
 
     with open(file_name, 'w') as f:
         json.dump(dict_generated, f, indent=2)
@@ -207,5 +219,6 @@ if __name__=='__main__':
     parser.add_argument('--max_num_batched_tokens',type=int, default=1)
     parser.add_argument('--num_demonstrations',type=int, default=4)
     parser.add_argument('--max_gen_length',type=int, default=160)
+    parser.add_argument('--user_assistant',action='store_true') # default false now!
     args = parser.parse_args()
     main(args)

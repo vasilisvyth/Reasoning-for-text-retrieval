@@ -1,7 +1,8 @@
 from quest.common import example_utils
 import random
 from template_construction import create_rand_demonstrations, concat_demonstations, concat_test2prompt
-from templates_llama import INSTRUCTION_DOCS_ANON, DEMONSTRATIONS_DOCS_ANON, TEST_TEMPLATE_DOCS_ANON
+from templates_wizard_lm import INSTRUCTION_DOCS_ANON, DEMONSTRATIONS_DOCS_ANON, TEST_TEMPLATE_DOCS_ANON
+from templates_code_llama import INSTRUCTION_USER_ASSISTANT, DEMONSTRATIONS_USER_ASSISTANT, TEST_TEMPLATE_USER_ASSISTANT
 import argparse
 import torch
 import os
@@ -15,80 +16,12 @@ import pickle
 import json
 from seeds import set_seed
 from prepare_dataset import read_queries
+from collections import Counter
 
-def llama_tokenize_demonstrations(tokenizer, demonstrations, seed):
-    seed_demonstrations = demonstrations[seed]
-    dict_tokenized_demonstations = {}
-
-    for id in range(len(seed_demonstrations)):
-        ex_key = 'ex'+str(id)
-        tmp_demonstration_txt = seed_demonstrations[ex_key]
-        dict_tokenized_demonstations[ex_key] = tokenizer(tmp_demonstration_txt)
-        # dict_tokenized_demonstations[ex_key]['input_ids'].append(tokenizer.eos_token_id)
-        # dict_tokenized_demonstations[ex_key]['attention_mask'].append(1)
-        # a=1
-
-    return dict_tokenized_demonstations
-
-def concat_tokenized_demonstrations(dict_tokenized_demonstations, selected_demonstrations_ids):
-    input_ids = []
-    attention_mask = []
-    for dem_id in selected_demonstrations_ids:
-        ex_key = 'ex'+str(dem_id)
-        dict_tmp_demonstration = dict_tokenized_demonstations[ex_key]
-        tmp_input_ids = dict_tmp_demonstration['input_ids']
-        tmp_attention_mask = dict_tmp_demonstration['attention_mask']
-        input_ids.extend(tmp_input_ids)
-        attention_mask.extend(tmp_attention_mask)
-
-    return input_ids, attention_mask
-
-def print_args(args):
-    # Print the values using a for loop
-    print("Argument values:")
-    for arg, value in vars(args).items():
-        print(f"{arg}: {value}")
-
-def tokenize_data(test_dict_query_ids_queries, tokenizer, dict_tokenized_demonstations):
-    all_input_ids =  []
-    all_attention_mask = []
-    all_qids = []
-    for query_id in test_dict_query_ids_queries:
-        
-        query = test_dict_query_ids_queries[query_id]
-        if args.dem_method=='rand':
-            selected_demonstrations_ids = create_rand_demonstrations(args.seed, args.num_demonstrations, DEMONSTRATIONS_DOCS_ANON)
-        else:
-            #  = [ DEMONSTRATIONS_BETTER_DEM['ex2'], DEMONSTRATIONS_BETTER_DEM['ex4'], DEMONSTRATIONS_BETTER_DEM['ex6'], DEMONSTRATIONS_BETTER_DEM['ex3'] ]
-            selected_demonstrations_ids = [2,4,6,3]
-            random.shuffle(selected_demonstrations_ids)
-
-        tokenized_instuction = tokenizer('Below is an instruction that describes a task. Write python code that appropriately completes the request. Think step by step')
-        #'Write python code that first breaks the instruction step by step into subquestions and then combine them to get the answer to the original question.'
-        input_ids = tokenized_instuction['input_ids']
-        attention_mask = tokenized_instuction['attention_mask']
-
-        dem_input_ids, dem_attention_mask = concat_tokenized_demonstrations(dict_tokenized_demonstations, selected_demonstrations_ids)
-        input_ids = input_ids+ dem_input_ids 
-        attention_mask = attention_mask + dem_attention_mask
-
-        test_example = TEST_TEMPLATE_DOCS_ANON.format(question=query)
-
-        tokenized_test_example = tokenizer(test_example)
-
-        input_ids = input_ids + tokenized_test_example['input_ids']
-        attention_mask = attention_mask + tokenized_test_example['attention_mask']
-
-        all_input_ids.append(input_ids)
-        all_attention_mask.append(attention_mask)
-        all_qids.append(query_id)
-
-    return all_input_ids, all_attention_mask, all_qids
-
-def bytes_to_giga_bytes(bytes):
-  return bytes / 1024 / 1024 / 1024
+from utils import print_args, tokenize_demonstrations,tokenize_data, bytes_to_giga_bytes, load_pickle, tokenize_user_assistant
 
 def main(args):
+    args.user_assistant = True
     print_args(args)
     set_seed(args.seed)
 
@@ -99,16 +32,18 @@ def main(args):
 
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     # tokenizer info
-    # tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-    # tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"
     print(f'tokenizer.padding_side {tokenizer.padding_side} !!!!!')
 
     collator = DataCollatorWithPadding(tokenizer)#, pad_to_multiple_of=8)
 
-    dict_tokenized_demonstations = llama_tokenize_demonstrations(tokenizer, DEMONSTRATIONS_DOCS_ANON, args.seed)
-    
-    all_input_ids, all_attention_mask, all_qids = tokenize_data(test_dict_query_ids_queries, tokenizer, dict_tokenized_demonstations)
+    if args.user_assistant:
+        all_input_ids, all_attention_mask, all_qids = tokenize_user_assistant(INSTRUCTION_USER_ASSISTANT, DEMONSTRATIONS_USER_ASSISTANT, TEST_TEMPLATE_USER_ASSISTANT, test_dict_query_ids_queries, args, tokenizer)
+    else:
+        dict_tokenized_demonstations = tokenize_demonstrations(tokenizer, DEMONSTRATIONS_DOCS_ANON, args.seed)
+        all_input_ids, all_attention_mask, all_qids = tokenize_data(test_dict_query_ids_queries, tokenizer, dict_tokenized_demonstations, args, INSTRUCTION_DOCS_ANON)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'device {device}')
@@ -145,19 +80,19 @@ def main(args):
     i = 0
     max_new_tokens = args.max_gen_length
     print('before inference')
-    with torch.backends.cuda.sdp_kernel(enable_flash=False, enable_math=False, enable_mem_efficient=False):
-        for batch in tqdm(dataloader):
-            input_ids = batch['input_ids'].to(device)
-            attention_mask = batch['attention_mask'].to(device)
-            # input_ids, attention_mask = input_ids[:2,:32], attention_mask[:2,:32]
-            # tokenizer.batch_decode(input_ids)[0]
-            qids = batch['qids']
-            generated_ids = model.generate(input_ids, attention_mask = attention_mask,max_new_tokens=max_new_tokens)
-            all_qids.extend(qids)
-            all_generated_ids.extend(generated_ids[:,-max_new_tokens:])
-            i+=1
-            if i > 4:
-                break
+    # with torch.backends.cuda.sdp_kernel(enable_flash=False, enable_math=False, enable_mem_efficient=False):
+    for batch in tqdm(dataloader):
+        input_ids = batch['input_ids'].to(device)
+        attention_mask = batch['attention_mask'].to(device)
+        # input_ids, attention_mask = input_ids[:2,:32], attention_mask[:2,:32]
+        # tokenizer.batch_decode(input_ids)[0]
+        qids = batch['qids']
+        generated_ids = model.generate(input_ids, attention_mask = attention_mask,max_new_tokens=max_new_tokens)
+        all_qids.extend(qids)
+        all_generated_ids.extend(generated_ids[:,-max_new_tokens:])
+        i+=1
+        if i > 2:
+            break
     
         print('GB ',bytes_to_giga_bytes(torch.cuda.max_memory_allocated()))
 
@@ -197,5 +132,7 @@ if __name__=='__main__':
     parser.add_argument('--bit8',action='store_true') # default false now!
     parser.add_argument('--bit4',action='store_true') # default false now!
     parser.add_argument('--better_transformer',action='store_true') # default false now!
+    parser.add_argument('--use_flash_attention_2',action='store_true') # default false now!
+    parser.add_argument('--user_assistant',action='store_true') # default false now!
     args = parser.parse_args()
     main(args)

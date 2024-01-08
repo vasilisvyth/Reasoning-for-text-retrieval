@@ -69,7 +69,7 @@ def calc_f1_pr_rec(gold_examples, pred_examples):
   print("Avg. F1")
   avg_f1 = eval_utils.print_avg(gold_examples, f1_vals)
   template_avg_f1 = eval_utils.print_avg_by_template(gold_examples, f1_vals)
-
+  return avg_prec, avg_rec, avg_f1
 
 def main(unused_argv):
   gold_examples = example_utils.read_examples(FLAGS.gold)

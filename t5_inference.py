@@ -13,12 +13,15 @@ import pickle
 from quest.common.example_utils import Example
 from analyze_retriever import calc_mrec_rec
 from prepare_dataset import read_docs, read_queries
-from utils import load_pickle
+from utils import load_pickle, update_results
+import os
+from prepare_dataset import read_docs
+from run_eval import calc_f1_pr_rec
 
 def calculate_queries_scores(args, model, doc_embs, dict_query_ids_queries, doc_title_map, eval_k, all_dids, gold_examples):
     run = defaultdict(list)
     doc_embs = torch.from_numpy(doc_embs)
-    Instruction = 'Represent this sentence for searching relevant passages:'
+    Instruction = 'Represent this sentence for searching relevant passages: '
     all_pred_examples = []
     queries = list(dict_query_ids_queries.values())
     qids = list(dict_query_ids_queries.keys())
@@ -50,8 +53,19 @@ def calculate_queries_scores(args, model, doc_embs, dict_query_ids_queries, doc_
             all_pred_examples.append(example)
         
 
-    avg_recall_vals, avg_mrecall_vals = calc_mrec_rec(gold_examples, all_pred_examples)
+    avg_prec, avg_rec, avg_f1 = calc_f1_pr_rec(gold_examples, all_pred_examples)
 
+    avg_scores = {'avg_prec':avg_prec['all'], 'avg_rec':avg_rec['all'], 'avg_f1':avg_f1['all']}
+    avg_recall_vals, avg_mrecall_vals, all_rec_per_template = calc_mrec_rec(gold_examples, all_pred_examples)
+
+    avg_recall_vals = {f'avg_R@{key}':value for key, value in avg_recall_vals.items()}
+    avg_mrecall_vals = {f'avg_MR@{key}':value for key, value in avg_mrecall_vals.items()}
+    INFO = { 'model':'bge-large','checkpoint':'BAAI/bge-large-en-v1.5',
+             'K':-1,'threshold':'None'
+    }
+
+    path_results_csv = os.path.join('checkpoints','results.csv')
+    update_results(path_results_csv, avg_recall_vals, avg_mrecall_vals, all_rec_per_template, avg_scores, INFO)
     # special care is needed for the NOT operator
     k = 10  # Number of results you want
     # scores, indices = index.search(query_vector, k)

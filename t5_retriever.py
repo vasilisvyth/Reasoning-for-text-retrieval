@@ -17,6 +17,7 @@ from hf_trainer import HFTrainer
 from seeds import set_seed
 import uuid
 import wandb
+from torch import optim
 
 
 def print_args(args):
@@ -87,7 +88,7 @@ def main(args):
         print(f'Val set Total queries after removing complex queries: {len(val_dict_query_ids_queries)}')
 
     if 'bge' in args.tokenizer:
-        train_queries = ['Represent this sentence for searching relevant passages:'+query for query in train_queries]
+        train_queries = ['Represent this sentence for searching relevant passages: '+query for query in train_queries]
     
 
     # create dataset for training
@@ -137,7 +138,7 @@ def main(args):
         eval_steps=args.eval_steps, #Number of update steps between two evaluations
         save_total_limit=2, # saves best and another one
         # optim = 'adafactor',
-        eval_delay = 9000,
+        eval_delay = 10000,
         # lr_scheduler_type='linear',
         report_to="wandb",
         run_name=args.wb_run_name,  # name of the W&B run (optional)
@@ -151,12 +152,15 @@ def main(args):
     relative_step=False
     warmup_init = False # warmup_init=True` requires `relative_step=True
     print(f'scale_parameter {scale_parameter} relative_step {relative_step} warmup_init {warmup_init}')
-    optimizer = Adafactor(model.parameters(), scale_parameter=scale_parameter, relative_step=relative_step, warmup_init=warmup_init, lr=args.lr)
+    if 't5' in args.pretrained:
+        optimizer = Adafactor(model.parameters(), scale_parameter=scale_parameter, relative_step=relative_step, warmup_init=warmup_init, lr=args.lr)
+    else:
+        optimizer=optim.AdamW(model.parameters(),lr=args.lr, betas=(0.9,0.95))
     # lr_scheduler = AdafactorSchedule(optimizer)
 
     # trainer = Trainer(model, training_args, data_collator = pair_collator, train_dataset=train_pair_dataset,
     #                   eval_dataset=eval_dataset)#, callbacks=[],optimizers=(optimizer, lr_scheduler))  
-    early_stopping = EarlyStoppingCallback(early_stopping_patience=3, early_stopping_threshold=0.005)
+    early_stopping = EarlyStoppingCallback(early_stopping_patience=3, early_stopping_threshold=0.05)
     
     #     model(batch['query_ids'], batch['doc_ids'], batch['queries'], batch['docs'])
     trainer = HFTrainer(

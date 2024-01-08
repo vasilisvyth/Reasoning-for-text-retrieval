@@ -19,7 +19,7 @@ class EvaluateQueryDataset(Dataset):
         for i in range(0,len(self.input),step_size):
             input_text = self.input[i:i+step_size]
             if 'bge' in tokenizer.name_or_path:
-                input_text = ['Represent this sentence for searching relevant passages:'+text for text in input_text]
+                input_text = ['Represent this sentence for searching relevant passages: '+text for text in input_text]
             tokenized_input = tokenizer(
                 input_text,
                 padding=True,

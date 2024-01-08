@@ -9,6 +9,11 @@ from transformers import AutoTokenizer
 from bi_encoder import DenseBiEncoder
 from seeds import set_seed
 import transformers
+import json
+from tqdm import tqdm
+from python_interpreters_docs_anon import preprocess_find_docs_call, current_program, synthesize_program
+from quest.common import document_utils
+from tools import DocumentFinder
 
 def test_logical_operators():
     program = 'A and not B'
@@ -50,14 +55,61 @@ def finetuned_embed_docs():
     tokenized_txt = tokenizer.encode_plus(doc_text_map[doc_id], return_tensors='pt',max_length=512,truncation=True)
     input_ids, attention_mask = tokenized_txt['input_ids'], tokenized_txt['attention_mask']
     with torch.no_grad():
-        embed_doc = model.encode(input_ids, attention_mask)
+        embed_doc = model.encode_mean_polling(input_ids, attention_mask)
     
     print(torch.max(torch.abs(docs[doc_id]-embed_doc[doc_id])))
     print(transformers.__version__)
     a=1
 
-print('finetuned embed docs')
-finetuned_embed_docs()
-test_and_operator()
-zero_shot_gtr_docs()
-test_logical_operators()
+def program_check():
+    file = open('docs_anon.json', "r")
+    documents = document_utils.read_documents("quest_data\\documents.jsonl")
+    results_json = json.load(file)
+    for query in tqdm(results_json):
+        result = results_json[query]['pred']
+        new_result = preprocess_find_docs_call(query, result)
+        program = synthesize_program(result = new_result, prefix = '')
+        
+        template_used = results_json[query]['template']
+        sorted_pred_doc_titles, var_dict = current_program(program, documents, query, template_used)
+
+        custom_dict_0 = DocumentFinder.find_docs(query,var_dict['question_0'])
+        custom_dict_1 = DocumentFinder.find_docs(query,var_dict['question_1'])
+        a=1
+        assert(custom_dict_0.data ==var_dict['docs_0'].data)
+        assert(custom_dict_1.data ==var_dict['docs_1'].data)
+        break
+    a=1
+
+def replace_rows():
+    import torch
+
+
+    original_tensor = torch.randn(5, 2)
+
+    replacement_tensor = torch.randn(3, 2)
+
+    # List of indices representing rows to be changed
+    indices_to_change = [2, 4, 0]
+
+    # Convert the list of indices to a tensor
+    indices_tensor = torch.tensor(indices_to_change)
+
+    # Replace the corresponding rows in the original tensor
+    original_tensor[indices_to_change] = replacement_tensor
+
+    assert(torch.all(replacement_tensor[0] ==original_tensor[indices_tensor[0]]))
+    assert(torch.all(replacement_tensor[1] ==original_tensor[indices_tensor[1]]))
+    assert(torch.all(replacement_tensor[2] ==original_tensor[indices_tensor[2]]))
+    a=1
+    # Now, original_tensor has updated values for the specified rows
+
+print('replace rows')
+replace_rows()
+# print('program check')
+# program_check()
+# print('finetuned embed docs')
+# finetuned_embed_docs()
+# test_and_operator()
+# zero_shot_gtr_docs()
+# test_logical_operators()
