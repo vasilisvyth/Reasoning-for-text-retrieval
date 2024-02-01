@@ -17,6 +17,7 @@ from seeds import set_seed
 from utils import print_args, bytes_to_giga_bytes,load_pickle, create_pickle
 import gc
 from templates.mistral_prompt import Instruction, templates_dict
+import cProfile
 
 def last_token_pool(last_hidden_states: Tensor,
                  attention_mask: Tensor) -> Tensor:
@@ -43,8 +44,10 @@ def build_docs(doc_text_map, rand_dids):
 
 def create_embeddings(dataloader, rand_dids, device, model):
     all_dids = []
-    encoded_embeds = [] 
+    last_layer_embeds = [] 
+    all_layers_embed = []
     model.to(device) # not needed for 4bit and 8bit
+    
     with torch.no_grad():
         for i, batch in enumerate(tqdm(dataloader)):
             #assert(batch_dict['input_ids'][0] == batch['input_ids'][0][12:].tolist())
@@ -52,16 +55,29 @@ def create_embeddings(dataloader, rand_dids, device, model):
             # dids = batch.pop('ids')
             batch = {key: batch[key].to(device) for key in batch}
             # tokenizer.batch_decode(input_ids)[0]
-            
             # generated_ids = model.generate(input_ids, attention_mask = attention_mask,max_new_tokens=max_new_tokens)
             outputs = model(**batch)
             embeddings = last_token_pool(outputs.last_hidden_state, batch['attention_mask'])
-            encoded_embeds.append(embeddings.cpu().numpy())
+            last_layer_embeds.append(embeddings.cpu().numpy())
 
+            cur_all_embed = [hidden_state[:,-1].cpu() for hidden_state in outputs.hidden_states] # len(layers) each torch size[batch_size, hidden_dim]
+            cur_all_embed = torch.stack(cur_all_embed)
+            all_layers_embed.append(cur_all_embed)
+            
             all_dids.extend(dids)
+            if i > 6: break
+            
 
-        encoded_embeds = np.concatenate(encoded_embeds, axis=0)
-    return encoded_embeds
+        last_layer_embeds = np.concatenate(last_layer_embeds, axis=0)
+        
+        # # Step 1: Stack each element in the inner lists along the second dimension
+        # stacked_batches = [torch.stack(batch, dim=1) for batch in all_layers_embed]
+
+        # # Step 2: Concatenate the batches along the first dimension
+        # final_tensor = torch.cat(stacked_batches, dim=0)
+
+
+    return last_layer_embeds, all_layers_embed
 
 def build_queries(test_dict_query_ids_queries, random_query_ids, instruction):
     rand_queries = []
@@ -71,11 +87,8 @@ def build_queries(test_dict_query_ids_queries, random_query_ids, instruction):
         rand_queries.append(q)
     return rand_queries
 
-def create_dataset_docs(data_dir, tokenizer):
-    doc_text_map, doc_title_map = read_docs(os.path.join(data_dir,'doc_text_list.pickle'), os.path.join(data_dir,'doc_title_map.tsv'))
+def create_dataset_docs(doc_text_map, tokenizer, rand_ids):
     
-    rand_dids_path = os.path.join('files','with_true_bge_large__0_rand_ids_top_25.pickle')
-    rand_ids = load_pickle(rand_dids_path)
     rand_doc_text = build_docs(doc_text_map, rand_ids)
     dataset = Dataset.from_dict({'input_texts': rand_doc_text})
     dataset.set_transform(partial(tokenize, tokenizer, 512))
@@ -135,10 +148,12 @@ def create_dataset_subqueries(tokenizer, templates_index):
     return dataset, input_type, all_ex_ids
 
 def main(args):
+    # a = np.load('dok.npz')
     # docs = np.load('rand_zero_shot_mistral.npy')
     # ids = load_pickle('rand_doc_ids.pickle')
-    # args.model_name  = 'gpt2'
-    args.encode_decomposition = True
+    args.output_hidden_states = True
+    args.encode_all_docs = True
+    # args.model_name= 'gpt2'
     print_args(args)
     set_seed(args.seed)
     data_dir = 'quest_data'
@@ -146,16 +161,27 @@ def main(args):
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
     
-
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'device {device}')
 
-    if args.encode_docs:
-        print('Encode docs...')
-        dataset, input_type, rand_ids = create_dataset_docs(data_dir, tokenizer)
+    if args.encode_rand_docs:
+        print('Encode rand docs...')
+        doc_text_map, doc_title_map = read_docs(os.path.join(data_dir,'doc_text_list.pickle'), os.path.join(data_dir,'doc_title_map.tsv'))
+        rand_dids_path = os.path.join('files','with_true_bge_large__0_rand_ids_top_25.pickle')
+        ids = load_pickle(rand_dids_path)
+        dataset, input_type, rand_ids = create_dataset_docs(doc_text_map, tokenizer, ids)
+
+    if args.encode_all_docs:
+        doc_text_map, doc_title_map = read_docs(os.path.join(data_dir,'doc_text_list.pickle'), os.path.join(data_dir,'doc_title_map.tsv'))
+
+        args.doc_end = len(doc_text_map) if args.doc_end == 0 else args.doc_end
+        print(f'encode docs from {args.doc_start} to {args.doc_end}')
+        ids = [i for i in range(args.doc_start, args.doc_end,1)]
+        dataset, input_type, rand_ids = create_dataset_docs(doc_text_map, tokenizer, ids)
+        input_type = input_type +f'_{args.doc_start}_{args.doc_end}'
+
     if args.encode_queries:
         print('Encode queries...')
-        
         dataset, input_type, rand_ids = create_dataset_queries(tokenizer, args.instruct)
     if args.encode_decomposition:
         print('Question decomposition')
@@ -183,18 +209,24 @@ def main(args):
    
 
     # model.resize_token_embeddings(model.config.vocab_size + 1) # because we added pad_token    
-    model = AutoModel.from_pretrained(args.model_name) #
+    model = AutoModel.from_pretrained(args.model_name, output_hidden_states=args.output_hidden_states) #
     if args.better_transformer:
         model = model.to_bettertransformer()
     print('before inference')
-
-    dataloader = DataLoader(dataset,batch_size=args.batch_size, shuffle=False,collate_fn=collator) # num_workers=2
+    #! no shuffle
+    dataloader = DataLoader(dataset,batch_size=args.batch_size, shuffle=False,collate_fn=collator)#, num_workers=2, pin_memory=True)
     
-    encoded_embeds = create_embeddings(dataloader, rand_ids, device, model)
-    embed_path = os.path.join('files',f'{input_type}_rand_zero_shot_mistral.npy')
+   
+    encoded_embeds, all_layers_embed = create_embeddings(dataloader, rand_ids, device, model)
+    
+    all_layers_embed = np.savez(f'{input_type}_all_zero_shot_mistral',torch.stack(all_layers_embed).numpy())
+    print('finished saving all layers')
+
+    embed_path = os.path.join('files',f'{input_type}_last_zero_shot_mistral.npy')
     np.save(embed_path, encoded_embeds)
     print('finished encoding...')
 
+    # create_pickle(all_layers_embed, os.path.join('files',f'{input_type}_zero_shot_mistral.pickle'))
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='Generate programs using open source programs')
@@ -205,8 +237,12 @@ if __name__=='__main__':
     parser.add_argument('--instruct', type=str, default="instr_2")
     parser.add_argument('--seed',type=int, default=0)
     parser.add_argument('--batch_size',type=int, default=8)
+    parser.add_argument('--doc_start',type=int, default=0)
+    parser.add_argument('--doc_end',type=int, default=0)
     parser.add_argument('--max_length',type=int, default=512) 
-    parser.add_argument('--encode_docs',action='store_true') # default false now!
+    parser.add_argument('--encode_rand_docs',action='store_true') # default false now!
+    parser.add_argument('--output_hidden_states', action='store_true') # default false now!
+    parser.add_argument('--encode_all_docs',action='store_true') # default false now!
     parser.add_argument('--encode_queries',action='store_true') # default false now!
     parser.add_argument('--encode_decomposition',action='store_true') # default false now!
     parser.add_argument('--bit8',action='store_true') # default false now!
