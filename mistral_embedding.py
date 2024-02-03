@@ -60,14 +60,12 @@ def create_embeddings(dataloader, rand_dids, device, model):
             embeddings = last_token_pool(outputs.last_hidden_state, batch['attention_mask'])
             last_layer_embeds.append(embeddings.cpu().numpy())
 
-            cur_all_embed = [hidden_state[:,-1].cpu() for hidden_state in outputs.hidden_states] # len(layers) each torch size[batch_size, hidden_dim]
-            cur_all_embed = torch.stack(cur_all_embed)
-            all_layers_embed.append(cur_all_embed)
-            
+            # cur_all_embed = [hidden_state[:,-1].cpu() for hidden_state in outputs.hidden_states[-6:-1]] # len(layers) each torch size[batch_size, hidden_dim]
+            # cur_all_embed = torch.stack(cur_all_embed)
+            # all_layers_embed.append(cur_all_embed)
+            # if i > 6: break
             all_dids.extend(dids)
-            if i > 6: break
             
-
         last_layer_embeds = np.concatenate(last_layer_embeds, axis=0)
         
         # # Step 1: Stack each element in the inner lists along the second dimension
@@ -77,7 +75,7 @@ def create_embeddings(dataloader, rand_dids, device, model):
         # final_tensor = torch.cat(stacked_batches, dim=0)
 
 
-    return last_layer_embeds, all_layers_embed
+    return last_layer_embeds
 
 def build_queries(test_dict_query_ids_queries, random_query_ids, instruction):
     rand_queries = []
@@ -95,17 +93,21 @@ def create_dataset_docs(doc_text_map, tokenizer, rand_ids):
     input_type = 'docs'
     return dataset, input_type, rand_ids
 
-def create_dataset_queries(tokenizer, instruct):
+def create_dataset_queries(tokenizer, instruct, rand_queries_path):
     instruction = Instruction[instruct]
     test_dict_query_ids_queries, test_query_ids_doc_ids = read_queries(os.path.join(args.data_dir,'test_query_ids_queries.tsv'), 
                                                  os.path.join(args.data_dir,'test_query_ids_doc_ids.tsv'))
-    rand_qids_path = os.path.join('files','rand_qids.pickle')
-    rand_ids = load_pickle(rand_qids_path)
-    rand_queries = build_queries(test_dict_query_ids_queries, rand_ids, instruction)
+    
+    if rand_queries_path:
+        qids = load_pickle( os.path.join('files',rand_queries_path)) #'rand_qids.pickle'
+    else:
+        qids = [i for i in range(len(test_dict_query_ids_queries))]  
+
+    rand_queries = build_queries(test_dict_query_ids_queries, qids, instruction)
     dataset = Dataset.from_dict({'input_texts': rand_queries})
     dataset.set_transform(partial(tokenize, tokenizer, 64))
     input_type = f'query_{instruct}_'
-    return dataset, input_type, rand_ids
+    return dataset, input_type, qids
 
 def create_dataset_subqueries(tokenizer, templates_index):
     examples_with_subquestions = load_pickle(os.path.join('files','ex_with_subq_mistral_rand_docs_anon.json.pickle'))
@@ -149,17 +151,18 @@ def create_dataset_subqueries(tokenizer, templates_index):
 
 def main(args):
     # a = np.load('dok.npz')
-    # docs = np.load('rand_zero_shot_mistral.npy')
+    # docs = np.load('files/docs_0_70000_last_zero_shot_mistral.npy')
     # ids = load_pickle('rand_doc_ids.pickle')
-    args.output_hidden_states = True
-    args.encode_all_docs = True
+    # args.output_hidden_states = True
     # args.model_name= 'gpt2'
+    args.encode_queries = True
     print_args(args)
     set_seed(args.seed)
     data_dir = 'quest_data'
     
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
-    collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
+    pad_to_multiple_of = None if args.batch_size == 1 else 8
+    collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=pad_to_multiple_of)
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'device {device}')
@@ -182,7 +185,8 @@ def main(args):
 
     if args.encode_queries:
         print('Encode queries...')
-        dataset, input_type, rand_ids = create_dataset_queries(tokenizer, args.instruct)
+
+        dataset, input_type, rand_ids = create_dataset_queries(tokenizer, args.instruct, args.rand_queries)
     if args.encode_decomposition:
         print('Question decomposition')
         dataset, input_type, rand_ids = create_dataset_subqueries(tokenizer, templates_index = {
@@ -214,14 +218,13 @@ def main(args):
         model = model.to_bettertransformer()
     print('before inference')
     #! no shuffle
-    dataloader = DataLoader(dataset,batch_size=args.batch_size, shuffle=False,collate_fn=collator)#, num_workers=2, pin_memory=True)
+    num_workers = 0 if args.model_name=='gpt2' else 4
+    pin_memory = False if args.model_name=='gpt2' else True
+    dataloader = DataLoader(dataset,batch_size=args.batch_size, shuffle=False,collate_fn=collator, num_workers=num_workers, pin_memory=pin_memory)
     
    
-    encoded_embeds, all_layers_embed = create_embeddings(dataloader, rand_ids, device, model)
+    encoded_embeds = create_embeddings(dataloader, rand_ids, device, model)
     
-    all_layers_embed = np.savez(f'{input_type}_all_zero_shot_mistral',torch.stack(all_layers_embed).numpy())
-    print('finished saving all layers')
-
     embed_path = os.path.join('files',f'{input_type}_last_zero_shot_mistral.npy')
     np.save(embed_path, encoded_embeds)
     print('finished encoding...')
@@ -234,7 +237,7 @@ if __name__=='__main__':
     parser.add_argument('--data_dir', type=str, default="quest_data")
     parser.add_argument('--model_name', type=str, default="intfloat/e5-mistral-7b-instruct")
     parser.add_argument('--tokenizer', type=str, default="intfloat/e5-mistral-7b-instruct")
-    parser.add_argument('--instruct', type=str, default="instr_2")
+    parser.add_argument('--instruct', type=int, default=0)
     parser.add_argument('--seed',type=int, default=0)
     parser.add_argument('--batch_size',type=int, default=8)
     parser.add_argument('--doc_start',type=int, default=0)
@@ -244,6 +247,7 @@ if __name__=='__main__':
     parser.add_argument('--output_hidden_states', action='store_true') # default false now!
     parser.add_argument('--encode_all_docs',action='store_true') # default false now!
     parser.add_argument('--encode_queries',action='store_true') # default false now!
+    parser.add_argument('--rand_queries',type=str,default='')
     parser.add_argument('--encode_decomposition',action='store_true') # default false now!
     parser.add_argument('--bit8',action='store_true') # default false now!
     parser.add_argument('--bit4',action='store_true') # default false now!
