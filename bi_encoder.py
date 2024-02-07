@@ -9,7 +9,7 @@ class DenseBiEncoder(nn.Module):
         super().__init__()
         # if 't5' in model_name_or_dir:
             # check https://github.com/UKPLab/sentence-transformers/blob/master/sentence_transformers/models/Transformer.py#L53
-        if 't5' in model_name_or_dir:
+        if 't5' in model_name_or_dir or 'checkpoints' in model_name_or_dir:
             T5EncoderModel._keys_to_ignore_on_load_unexpected = ["decoder.*"]  # decoder and anything after it, probably not needed at all
             self.model = T5EncoderModel.from_pretrained(model_name_or_dir)
             self.encode_fn = self.encode_mean_polling  

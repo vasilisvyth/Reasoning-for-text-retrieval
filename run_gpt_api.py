@@ -1,21 +1,22 @@
 import argparse
 from tools import safe_execute
 import re
-from templates import template2logic
 from openai import OpenAI
 from time import sleep
 from tqdm import tqdm
 from seeds import set_seed
 import random
 from quest.common import example_utils
-from templates import TEST_TEMPLATE, INSTRUCTION, DEMONSTRATIONS
-from templates_better_dem import INSTRUCTION_BETTER_DEM, DEMONSTRATIONS_BETTER_DEM, TEST_TEMPLATE_BETTER_DEM
-from templates_docs_anon_quest import INSTRUCTION_DOCS_ANON, DEMONSTRATIONS_DOCS_ANON, TEST_TEMPLATE_DOCS_ANON
-from templates_docs_new_dem import TEST_TEMPLATE_DOCS_NEW, INSTRUCTION_DOCS_NEW, DEMONSTRATIONS_DOCS_NEW
-from template_construction import create_rand_demonstrations, concat_demonstations, concat_test2prompt
-from templates_query2doc import INSTRUCTION_DOCS_Q2DOC
+from templates.templates import TEST_TEMPLATE, INSTRUCTION, DEMONSTRATIONS
+from templates.templates_better_dem import INSTRUCTION_BETTER_DEM, DEMONSTRATIONS_BETTER_DEM, TEST_TEMPLATE_BETTER_DEM
+from templates.templates_docs_anon_quest import INSTRUCTION_DOCS_ANON, DEMONSTRATIONS_DOCS_ANON, TEST_TEMPLATE_DOCS_ANON
+from templates.templates_docs_new_dem import TEST_TEMPLATE_DOCS_NEW, INSTRUCTION_DOCS_NEW, DEMONSTRATIONS_DOCS_NEW
+from templates.templates_ngram import INSTRUCTION_DOCS_N_GRAM, DEMONSTRATIONS_DOCS_N_GRAM, TEST_TEMPLATE_DOCS_N_GRAM
+from templates.template_construction import create_rand_demonstrations, concat_demonstations, concat_test2prompt
+from templates.templates_query2doc import INSTRUCTION_DOCS_Q2DOC
 import json
 import pprint
+from chat_gpt_utils import calculate_cost, initialize_openai_client, chat_completion
 from utils import create_pickle, load_pickle
 from tenacity import (
     retry,
@@ -23,21 +24,11 @@ from tenacity import (
     wait_random_exponential,
 )  # for exponential backoff
 
-def calculate_cost(completion_tokens, prompt_tokens, model_name):
-   # gpt-3.5-turbo-1106	input $0.0010 / 1K tokens completion $0.0020 / 1K tokens
-   if model_name == "gpt-3.5-turbo-1106":
-        cost = completion_tokens / 1000 * 0.002 + prompt_tokens / 1000 * 0.001
-   elif model_name == 'gpt-3.5-turbo-instruct':
-        cost = completion_tokens / 1000 * 0.002 + prompt_tokens / 1000 * 0.0015
-   return {"completion_tokens": completion_tokens, "prompt_tokens": prompt_tokens, "cost": cost}
-
-
 def gpt_api_call(test_dict, args, openai_key, file_path):
     completion_tokens = 0
     prompt_tokens = 0
-    client = OpenAI(
-    api_key=openai_key,  # this is also the default, it can be omitted
-    )
+
+    client =  initialize_openai_client(openai_key)
     # selected_qids = [533, 536, 538, 88, 89, 104, 106, 128, # wrong negation
     #     74, 108, 125, 524, #correct negation
     #     1470, 1474, 1440, 1452, 1455, 1461, 1466, 1009, #wrong and
@@ -46,9 +37,9 @@ def gpt_api_call(test_dict, args, openai_key, file_path):
     
     for qid, query in enumerate(tqdm(test_dict)):
             # we randomly use a sentence with 0.23 probability
-            p = random.uniform(0, 1)
-            if p >= 0.09:
-                continue
+            # p = random.uniform(0, 1)
+            # if p >= 0.09:
+            #     continue
             # if qid not in random_ids:
             #     continue
             # random_ids.append(qid)
@@ -63,23 +54,19 @@ def gpt_api_call(test_dict, args, openai_key, file_path):
 
             if "pred" in test_dict[query]:
                 continue
-
+            print('exists')
             if args.greedy:
                 # greedy decoding
                 got_result = False
                 while not got_result:
                     try:
                         if args.model_name == "gpt-3.5-turbo-1106":
-                            result = client.chat.completions.create(
-                                model=args.model_name,
-                                messages=[
+                            messages=[
                                 {"role": "system", "content": instruction},
-                                {"role": "user", "content": full_prompt}],
-                                max_tokens=165,
-                                n=1,
-                                seed = args.seed, logprobs=True
-                                #stop=['\n\n'], # default is none
-                            )
+                                {"role": "user", "content": full_prompt}]
+                            
+                            result = chat_completion(client, args.model_name, messages, args.seed, max_tokens= 178, n=1)
+                            
                             got_result = True
                             prediction = result.choices[0].message.content
                             token_log_pairs = [(t.token, t.logprob) for t in result.choices[0].logprobs.content]
@@ -124,7 +111,6 @@ def gpt_api_call(test_dict, args, openai_key, file_path):
 
 def main(args):
     test_dir = args.test_dir
-    q2doc = True
     openai_key = input("What is your OpenAI key? ")
     out_name = input('What is the output file name? Do not add .json at the end ')
     out_name +='.json'
@@ -135,15 +121,15 @@ def main(args):
     for test_example in test_examples:
         query = test_example.query
         if args.dem_method=='rand':
-            selected_demonstrations_ids = create_rand_demonstrations(args.seed, args.num_demonstrations, DEMONSTRATIONS_DOCS_NEW)
+            selected_demonstrations_ids = create_rand_demonstrations(args.seed, args.num_demonstrations, DEMONSTRATIONS_DOCS_N_GRAM)
         else:
             #  = [ DEMONSTRATIONS_BETTER_DEM['ex2'], DEMONSTRATIONS_BETTER_DEM['ex4'], DEMONSTRATIONS_BETTER_DEM['ex6'], DEMONSTRATIONS_BETTER_DEM['ex3'] ]
-            # selected_demonstrations_ids = [2,4,6,3]
-            selected_demonstrations_ids = [2,4,6,3,1,5]
+            selected_demonstrations_ids = [2,4,6,3]
+            #selected_demonstrations_ids = [2,4,6,3,1,5]
             random.shuffle(selected_demonstrations_ids)
-        if not q2doc:
-            demonstations_text, demonstrations_ops = concat_demonstations(args.seed, selected_demonstrations_ids, DEMONSTRATIONS_DOCS_NEW)
-            demonstations_text = concat_test2prompt(demonstations_text, query, TEST_TEMPLATE_DOCS_NEW)
+        if not args.q2doc:
+            demonstations_text, demonstrations_ops = concat_demonstations(args.seed, selected_demonstrations_ids, DEMONSTRATIONS_DOCS_N_GRAM)
+            demonstations_text = concat_test2prompt(demonstations_text, query, TEST_TEMPLATE_DOCS_N_GRAM)
             demonstations_text = demonstations_text.lstrip()
         else:
             demonstations_text = f'question: {query}'
@@ -151,7 +137,7 @@ def main(args):
         test_dict[query] = {}
         test_dict[query]['demonstrations_ops'] = demonstrations_ops
         test_dict[query]['prompt'] = demonstations_text
-        test_dict[query]['instruction'] = INSTRUCTION_DOCS_Q2DOC
+        test_dict[query]['instruction'] = INSTRUCTION_DOCS_N_GRAM
         test_dict[query]['model_name'] = args.model_name 
         test_dict[query]['template'] = test_example.metadata.template
         test_dict[query]['domain'] = test_example.metadata.domain

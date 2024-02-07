@@ -1,18 +1,17 @@
-from tools import safe_execute, synthesize_program, DocumentFinder
 import json
 import argparse
 import re
 import numpy as np
-from templates import template2logic
+from templates.templates import template2logic
 import os
-from prepare_dataset import read_docs
+from data.prepare_dataset import read_docs, read_queries
 from run_eval import calc_f1_pr_rec
 from quest.common import example_utils
-from quest.common.example_utils import Example
+from quest.common.example_utils import Example, ExampleMetadata
 import pickle
 import numpy as np
 import torch
-from tools import DocumentFinder, Operations
+from tools import Operations, safe_execute, synthesize_program, VP_BM25, VP_HuggingFace, VP_SentenceTransformer
 from analyze_retriever import calc_mrec_rec
 from quest.common import document_utils
 from tqdm import tqdm
@@ -24,6 +23,8 @@ from transformers import AutoTokenizer
 from utils import load_pickle
 from seeds import set_seed
 from utils import create_pickle, update_results
+import torch.nn.functional as F
+from example_with_subquestions import ExampleWithSubQuestions
 
 def find_all_positions(text, substring):
     positions = []
@@ -101,27 +102,6 @@ def set_conversion(str):
     str = str.replace('and not','-')
     str = str.replace(' and ',' & ')
     str = str.replace(' or ',' | ')
-    # if 'not' in str:
-    #     continue
-
-    # list_str = str.split()
-    # program = ''
-    # inside_diff= False
-    # for i, substr in enumerate(list_str):
-    #     if substr=='difference':
-    #         program+= '.difference('
-    #         inside_diff = True
-
-    #     elif substr=='intersect':
-    #         program += ' & '
-    #     elif substr=='union':
-    #         program += ' | '
-    #     else:
-    #         if inside_diff:
-    #             program += f'{substr})'
-    #             inside_diff = False
-    #         else:
-    #             program += substr
 
     return str
 
@@ -222,9 +202,9 @@ def current_program(program):
 
     return var_dict
 
-def preprocess_find_docs_call(query, result):
+def preprocess_find_docs_call(query, result, class_name):
     replacement_query = query.replace("'", "\\'")  # Escape single quotes
-    new_result = result.replace("find_docs(",f"DocumentFinder.find_docs('{replacement_query}',")
+    new_result = result.replace("find_docs(",f"{class_name}.find_docs('{replacement_query}',")
     return new_result
 
 def create_results(new_gold_examples, pred_examples, count_bug, INFO):
@@ -262,28 +242,57 @@ def plot_lens(lens_per_template):
     # Show the plot
     plt.show()
 
+def append_subq_examples(var_dict, docs_var, documents, example, question_id, new_gold_examples, new_pred_examples):
+    subq_dids = list(var_dict[docs_var].data.keys())[:1000]
+    subq_docs = [documents[idx].title for idx in subq_dids]
+    # put as gold question the generated subquestion to avoid duplicates and as docs the ones of the original question
+    gold_subq_example = Example(query=var_dict[f'question_{question_id}'], docs=example.docs, metadata=ExampleMetadata(template=example.metadata.template))
+    new_gold_examples.append(gold_subq_example)
 
+    subq_example = Example(query=var_dict[f'question_{question_id}'], docs=subq_docs, metadata=ExampleMetadata(template=example.metadata.template))
+    new_pred_examples.append(subq_example)
+
+def process_template_example(example, var_dict, documents, new_gold_examples, new_pred_examples):
+    if (example.metadata.template=='_ that are also _' or example.metadata.template=='_ that are also both _ and _'):
+        for key in var_dict:
+            if key.startswith('docs_'):
+                question_id = int(key[key.index('_')+1:])
+                append_subq_examples(var_dict, key, documents, example, question_id, new_gold_examples, new_pred_examples)
+                
+
+    if (example.metadata.template == '_ that are not _'):
+
+        append_subq_examples(var_dict, 'docs_0', documents, example, 0, new_gold_examples, new_pred_examples)
+
+    if (example.metadata.template == '_ that are also _ but not _'):
+        append_subq_examples(var_dict, 'docs_0', documents, example, 0, new_gold_examples, new_pred_examples)
+        append_subq_examples(var_dict, 'docs_1', documents, example, 1, new_gold_examples, new_pred_examples)
+
+def extract_subquestions(var_dict):
+    questions = []
+    for key in var_dict:
+        if key.startswith('docs_'):
+            question_id = int(key[key.index('_')+1:])
+            question = var_dict[f'question_{question_id}']
+            questions.append(question)
+    
+    return questions
 
 def main(args):
     set_seed(0)
     print_args(args)
 
-    # with open('checkpoints/4913e0dd-b8/all_dids_check_13500.pkl','rb') as f:
-    #     loaded_object = pickle.load(f)
-    #     assert(loaded_object == [i for i in range(len(loaded_object))])
-    tokenizer = AutoTokenizer.from_pretrained('google/t5-v1_1-base')
-    # load docs
     path_doc_text_list = os.path.join(args.data_dir,'doc_text_list.pickle')
     path_doc_title_map = os.path.join(args.data_dir,'doc_title_map.tsv')
     doc_text_map, doc_title_map = read_docs(path_doc_text_list, path_doc_title_map)
 
     path_doc = os.path.join('quest_data','documents.jsonl')
     documents = document_utils.read_documents(path_doc)
-    title_doc_map = {value: key for key, value in doc_title_map.items()}
+    title_doc_map = {value: key for key, value in doc_title_map.items()} #! duplicates doc titles so smaller length
 
     path_test = os.path.join(args.data_dir,args.gold_examples_dir)
     gold_examples = example_utils.read_examples(path_test)
-    args.oracle_docs = True#True
+    args.oracle_docs = False#True # when we replace 
     if args.oracle_docs:
         domains = set() # 
         counter = 0
@@ -317,49 +326,102 @@ def main(args):
                     doc_id = title_doc_map[doc_title]
 
                     oracle_examples_dict[example.query][doc_id]  = new_doc_text
-        gold_examples = new_gold_examples
+        gold_examples = new_gold_examples # we only care about examples with attributions
     else:
         oracle_examples_dict = None
-    a=1         
 
-    # model = DenseBiEncoder('checkpoints/da0656a7-f3/checkpoint-13500', False, False)
-    # docs = torch.load('checkpoints/da0656a7-f3/scores_docs_check_0.pt')
-    # tokenized_txt = tokenizer.encode_plus(doc_text_map[0], return_tensors='pt')
-    # input_ids, attention_mask = tokenized_txt['input_ids'], tokenized_txt['attention_mask']
-    # with torch.no_grad():
-    #     embed_doc = model.encode(input_ids, attention_mask)
-    # all_dids = load_pickle('checkpoints/da0656a7-f3/all_dids_check_0.pkl')
-    # pretrained = DenseBiEncoder('google/t5-v1_1-base', False, False)
-    # pretrained_embed_doc = pretrained.encode(input_ids, attention_mask)
+    
+    RANK_CONSTANT = 60
+    replace_find = True
+    SCORE = f'1/({RANK_CONSTANT}+rank' # 'emb' #
+    THRESHOLD = 0.64#args.threshold#0.64 #'None'
+
     METHOD = 'bge-large'
-    use_sentence_transformer=False
+    
     normalize_embeddings=False
     doc_embs = None
+    tokenizer = None
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    #device = torch.device('cpu') # use this for mistral to 
+    K = 30000
     if METHOD =='bge-large':
         doc_embs = np.load(os.path.join('checkpoints','bge-zero','zero_shot_t5_bge_large.npy'))
         doc_embs = torch.from_numpy(doc_embs)
         CHECKPOINT = 'BAAI/bge-large-en-v1.5'
-        use_sentence_transformer=True
         normalize_embeddings=True
-        #DocumentFinder.init('BAAI/bge-large-en-v1.5', doc_embs, tokenizer, k=30000, method='bge-large', use_sentence_transformer=True, normalize_embeddings=True)
+        use_cash = False
+        results = os.path.join(args.files_dir,'vp_{METHOD}_results.pickle') if use_cash else {}
+        VP_SentenceTransformer.init(device, CHECKPOINT, doc_embs, K, METHOD, replace_find, SCORE, threshold=THRESHOLD,  normalize_embeddings=False, 
+            oracle_examples_dict = oracle_examples_dict, use_cache=use_cash)
+        class_name = 'VP_SentenceTransformer'
+        assert(len(doc_embs) == len(documents)== len(doc_title_map) == 325505)
     elif METHOD == 't5-base':
         doc_embs = torch.load('checkpoints/4913e0dd-b8/scores_docs_check_13500.pt')
         CHECKPOINT = 'checkpoints/4913e0dd-b8/checkpoint-13500/'
-    else:
+        tokenizer = AutoTokenizer.from_pretrained('google/t5-v1_1-base')
+
+        VP_HuggingFace.init(device, CHECKPOINT, doc_embs, tokenizer, K, METHOD, replace_find, SCORE, threshold='none', normalize_embeddings=normalize_embeddings, 
+            oracle_examples_dict=oracle_examples_dict)
+        class_name = 'VP_HuggingFace'
+    elif METHOD == 'mistral':
+        use_cash = True # use existing already calculated embeddings
+        if use_cash: device = torch.device('cpu')
+        
+        doc_embs = np.load(os.path.join('checkpoints','mistral_instruct','rand_zero_shot_mistral.npy'))
+        doc_embs = torch.from_numpy(doc_embs)
+        doc_embs = F.normalize(doc_embs, p=2, dim=1) 
+        doc_embs = doc_embs.to(device)
+
+        # just avoid mistral locally 
+        
+
+        CHECKPOINT = 't5-small' if use_cash else 'intfloat/e5-mistral-7b-instruct'
+        tokenizer = 'intfloat/e5-mistral-7b-instruct'
+        METHOD = 'mistral'
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer)
+        class_name = 'VP_HuggingFace'
+        K = len(doc_embs)
+        
+        
+        results = load_pickle('vp_mistral_rand_results.pickle') if use_cash else {}
+        
+        VP_HuggingFace.init(device, CHECKPOINT, doc_embs, tokenizer, K, METHOD, replace_find, SCORE, threshold=THRESHOLD, normalize_embeddings=normalize_embeddings, 
+            oracle_examples_dict=oracle_examples_dict, results=results, use_cache=use_cash)
+
+        # the following code is only useful when we work with rand qids and rand dids
+        rand_dids_path = os.path.join('files','with_true_bge_large__0_rand_ids_top_25.pickle')
+        dids = load_pickle(rand_dids_path)
+       
+
+        test_dict_query_ids_queries, test_query_ids_doc_ids = read_queries(os.path.join(args.data_dir,'test_query_ids_queries.tsv'), 
+                                                 os.path.join(args.data_dir,'test_query_ids_doc_ids.tsv'))
+        rand_qids_path = os.path.join('files','rand_qids.pickle')
+        rand_qids = load_pickle(rand_qids_path)
+
+        new_gold_examples = []
+        for qid in rand_qids:
+            query = test_dict_query_ids_queries[qid]
+            for ex in gold_examples:
+                if ex.query == query:
+                    new_gold_examples.append(ex)
+                    break
+
+        gold_examples = new_gold_examples
+
+    elif METHOD=='bm25':
         CHECKPOINT = 'dum_bm25_obj.pickle'
+        VP_BM25.init(CHECKPOINT, doc_embs, K, replace_find, SCORE, threshold='None',
+            oracle_examples_dict=oracle_examples_dict)
+        class_name = 'VP_BM25'
+    else:
+        raise(f'{METHOD} is not supported')
+        
+
 
     args.gpt_results_dir = 'docs_anon.json'
 
-    RANK_CONSTANT = 60
-    K = 30000
-    replace_find = True
-    SCORE = f'1/({RANK_CONSTANT}+rank' # 'emb' #
-    THRESHOLD = 0.64 #'None'
-    DocumentFinder.init(CHECKPOINT, doc_embs, tokenizer, k=K, method=METHOD, replace_find = replace_find, use_sentence_transformer=use_sentence_transformer,
-                         normalize_embeddings=normalize_embeddings, score=SCORE, threshold=THRESHOLD,oracle_examples_dict=oracle_examples_dict)
-
     data = {'and':'avg','or':'maximum','diff':'subtract','score':SCORE}
-    INFO = { 'model':METHOD,'checkpoint':CHECKPOINT,
+    INFO = { 'info':'','model':METHOD,'checkpoint':CHECKPOINT,
              'K':K,'threshold':THRESHOLD,'replace_find':replace_find,'template':args.gpt_results_dir
     }
     INFO.update(data)
@@ -369,21 +431,18 @@ def main(args):
     file=open(args.gpt_results_dir, "r")
     results_json = json.load(file)
     
-    true_ops = 0
-    count_ops = 0
-    all_subquestions = [] # debug_purpose
+
     count_bug = 0
-    count_not_ans = 0
-    count_find_bugs = 0
     count_forgot = 0
     pred_examples = []
-    results_len = []
-    new_gold_examples = []
-    count_parenthesis = 0
-    lens_per_template = defaultdict(list)
-    i = -1
-    # for qid, query in enumerate(tqdm(results_json)):
 
+    new_pred_examples = [ ]
+    new_gold_examples = []
+    lens_per_template = defaultdict(list)
+    examples_with_subquestions = []
+    i = -1
+    args.seperate_subquestions = False
+    print(f'Calculate seperate subquestions metrics? {args.seperate_subquestions}')
     for j, ex in enumerate(tqdm(gold_examples)):
         query = ex.query
         if not 'pred' in results_json[query]:
@@ -395,7 +454,7 @@ def main(args):
 
         result = results_json[query]['pred']
 
-        new_result = preprocess_find_docs_call(query, result)
+        new_result = preprocess_find_docs_call(query, result, class_name)
         # new_result = new_result.replace('intersection(docs_2)','intersection(docs_2,docs_2)')
         program = synthesize_program(result = new_result, prefix = '')
         # if not ' and ' in program:
@@ -406,8 +465,6 @@ def main(args):
             sorted_pred_doc_titles = []
         else:
             
-            
-
             var_dict = current_program(program)
 
             if var_dict is not None:
@@ -415,26 +472,34 @@ def main(args):
                     i+=1
                     ans = var_dict['ans']
                     sorted_items = sorted(ans.items(), key=lambda x: x[1], reverse=True)
-                        # Take the top k items
+
+                    # Take the top k items
                     initial_top_k_keys = [key for key, _ in sorted_items]
                     top_k_keys = initial_top_k_keys[:1000]
-                    sorted_pred_doc_titles = [documents[idx].title for idx in top_k_keys]
-                    # dict_ranks = {}
-                    # for key in var_dict:
-                    #     if key.startswith('docs_'):
-                    #         dict_ranks[key] = list(var_dict[key].data.keys())
-                    #         new_gold_examples.append(curr_ex)
+              
+                    if METHOD == 'mistral':
+                        # create_pickle(top_k_keys,'debug_top_keys.pickle')
+                        pred_docs_ids = [dids[index] for index in top_k_keys]
+                        sorted_pred_doc_titles = [doc_title_map[pr_id] for pr_id in pred_docs_ids]
+                    else:
+                        sorted_pred_doc_titles = [documents[idx].title for idx in top_k_keys]
 
+                    if args.seperate_subquestions:
+                        process_template_example(ex, var_dict, documents, new_gold_examples, new_pred_examples)
+
+                    subquestions = extract_subquestions(var_dict)
+                    current_example = ExampleWithSubQuestions(example =ex, subquestions = subquestions)
+                    examples_with_subquestions.append(current_example)
                     # gold_ids = [title_doc_map[tmp_doc] for tmp_doc in new_gold_examples[i].docs]
 
                     # gold_texts = [doc_text_map[id] for id in gold_ids]
                     # predicted_texts = [doc_text_map[id] for id in top_k_keys]
                     lens_per_template[template_used].append(len(top_k_keys))
 
-                except AttributeError:
+                except Exception as e:
                     # Handle the case where ans is not a dictionary
-                    print(f'original query {query}')
-                    print(f"Error: {ans} is not a dictionary")
+                    import traceback
+                    traceback.print_exc()
                     # print(final_program)
                     sorted_pred_doc_titles = []
 
@@ -447,30 +512,21 @@ def main(args):
         tmp_pred_example = Example(query=query, docs=sorted_pred_doc_titles)
         pred_examples.append(tmp_pred_example)
 
-    
-    
-    
-    create_results(gold_examples, pred_examples, count_bug, INFO)
+    print(f'num of examples {len(pred_examples)}')
+    print(f'count bug {count_bug}')
+
+    create_pickle(examples_with_subquestions,os.path.join(args.files_dir,f'ex_with_subq_{METHOD}_rand_{args.gpt_results_dir}.pickle'))
+
+    if METHOD == 'mistral': 
+        create_pickle(VP_HuggingFace.results,os.path.join(args.files_dir,f'vp_{METHOD}_rand_{args.gpt_results_dir}.pickle'))
+    elif METHOD == 'bge-large':
+        create_pickle(VP_SentenceTransformer.results,os.path.join(args.files_dir,f'vp_{METHOD}_{args.gpt_results_dir}.pickle'))
+    if args.seperate_subquestions:
+        print(f'len {len(new_gold_examples)}')
+        create_results(new_gold_examples, new_pred_examples, count_bug, INFO)
+    else:
+        create_results(gold_examples, pred_examples, count_bug, INFO)
     plot_lens(lens_per_template)
-
-
-    # with open('res_docs_anon_1000.pkl', 'wb') as file:
-    #     pickle.dump(DocumentFinder.results, file)
-
-        # results_json[query]['sub_questions'] = questions
-        # all_subquestions.extend(questions)
-    # print(f'count bug {count_bug}')
-    # print(f'count_forgot {count_forgot}')
-    # print(f'Generated answer set length: mean {np.mean(results_len)} std {np.std(results_len)}')
-    a=1
-        # safe_execute(program)
-    
-    # Serializing json
-    # json_object = json.dumps(results_json, indent=4)
-    
-    # # Writing to sample.json
-    # with open(args.result_dir, "w") as outfile:
-    #     outfile.write(json_object)
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='GPT API')
@@ -479,7 +535,10 @@ if __name__=='__main__':
     parser.add_argument('--result_dir', type=str, default="res_docs_anon_1000.json")
     parser.add_argument('--gold_examples_dir', type=str, default='test.jsonl')
     parser.add_argument('--oracle_docs',action='store_true') # default false now!
+    parser.add_argument('--seperate_subquestions',action='store_true')
+    parser.add_argument('--files_dir',type=str,default='files')
     # parser.add_argument('--gold_examples_dir', type=str, default='test.jsonl')
     parser.add_argument('--k', type=int, default=1000)
+    parser.add_argument('--threshold', type=float, default=0.64)
     args = parser.parse_args()
     main(args)

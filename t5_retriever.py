@@ -5,14 +5,14 @@ import os
 import torch
 from transformers import AutoTokenizer, TrainingArguments, Trainer, EarlyStoppingCallback, DataCollatorWithPadding
 from transformers.optimization import AdafactorSchedule
-from pair_dataset import PairDataset
-from pair_collator import BiEncoderPairCollator
+from data.pair_dataset import PairDataset
+from data.pair_collator import BiEncoderPairCollator
 from pathlib import Path
 from bi_encoder import DenseBiEncoder
 from transformers import T5EncoderModel,  Adafactor#, AdafactorSchedule
-from prepare_dataset import build_positive_pairs, read_docs, read_queries, remove_complex_queries, split
-from evaluate_dataset import  EvaluateDocsDataset, EvaluateQueryDataset
-from evaluate_collator import EvaluateCollator
+from data.prepare_dataset import build_positive_pairs, read_docs, read_queries, remove_complex_queries, split
+from data.evaluate_dataset import  EvaluateDocsDataset, EvaluateQueryDataset
+from data.evaluate_collator import EvaluateCollator
 from hf_trainer import HFTrainer
 from seeds import set_seed
 import uuid
@@ -28,11 +28,10 @@ def print_args(args):
 
 def main(args):
     # args.pretrained = 'google/t5-v1_1-base'
-
+    args.use_complex_queries = True
     # args.do_only_eval  = True
     print_args(args)
     set_seed(args.seed)
-
     
     # load model and tokenizer
     model = DenseBiEncoder(args.pretrained, args.scale_logits, args.right_loss)
@@ -43,18 +42,13 @@ def main(args):
     examples_train_aug = example_utils.read_examples(os.path.join(args.data_dir,'train_aug.jsonl'))
     examples_val = example_utils.read_examples(os.path.join(args.data_dir,'val.jsonl'))
     examples_test = example_utils.read_examples(os.path.join(args.data_dir,'test.jsonl'))
-
+    
     # Load training data related files
     train_dict_query_ids_queries, train_query_ids_doc_ids = read_queries(os.path.join(args.data_dir, 'train_query_ids_queries.tsv'), 
                                                                          os.path.join(args.data_dir,'train_query_ids_doc_ids.tsv'))
 
     # load docs
     doc_text_map, doc_title_map = read_docs(os.path.join(args.data_dir,'doc_text_list.pickle'), os.path.join(args.data_dir,'doc_title_map.tsv'))
-
-    # check how many docs are positive docs in the training set!
-    # docs_in_training = set()
-    # for q_id, d_id in train_query_ids_doc_ids:
-    #     docs_in_training.add(int(d_id))
 
     # Remove queries with metadata!= '_' from the dictionary
     if not args.use_complex_queries:
@@ -197,13 +191,13 @@ if __name__=='__main__':
     parser.add_argument(
         "--pretrained",
         type=str,
-        default="BAAI/bge-large-en-v1.5", #google/t5-v1_1-small
+        default="google/t5-v1_1-small", #google/t5-v1_1-small
         help="Pretrained checkpoint for the base model",
     )
     parser.add_argument(
         "--tokenizer",
         type=str,
-        default="BAAI/bge-large-en-v1.5",
+        default="google/t5-v1_1-small",
         help="Pretrained checkpoint for the base model",
     )
     parser.add_argument(

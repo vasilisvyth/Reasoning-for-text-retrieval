@@ -3,9 +3,9 @@ import json
 import argparse
 import re
 import numpy as np
-from templates import template2logic
+from templates.templates import template2logic
 import os
-from prepare_dataset import read_docs
+from data.prepare_dataset import read_docs
 from run_eval import calc_f1_pr_rec
 from quest.common import example_utils
 from quest.common.example_utils import Example
@@ -25,9 +25,11 @@ from utils import load_pickle
 from seeds import set_seed
 from utils import create_pickle, update_results
 from python_interpreters_docs_anon import create_results
+from data.prepare_dataset import read_queries
 
 # run inference using DocumentFinder
 def main(args):
+    args.docs_subset = True
     set_seed(0)
 
     tokenizer = AutoTokenizer.from_pretrained('google/t5-v1_1-base')
@@ -40,7 +42,8 @@ def main(args):
 
     path_test = os.path.join(args.data_dir,args.gold_examples_dir)
     gold_examples = example_utils.read_examples(path_test)
-    
+    test_dict_query_ids_queries, test_query_ids_doc_ids = read_queries(os.path.join(args.data_dir, 'test_query_ids_queries.tsv'), 
+                                                                         os.path.join(args.data_dir,'test_query_ids_doc_ids.tsv'))
 
     METHOD = 'bge-large'
     if METHOD =='bge-large':
@@ -55,11 +58,35 @@ def main(args):
         CHECKPOINT = 'checkpoints/4913e0dd-b8/checkpoint-13500/'
         use_sentence_transformer=False
         normalize_embeddings=False
+    elif METHOD == 'mistral':
+        doc_embs = np.load('rand_zero_shot_mistral.npy')
+    
+    # args.rand_dids = ''
+    #args.file_rand_qids = ''
+    flag_rand_qids = False
+    if os.path.exists(args.file_rand_qids):
+        rand_qids = load_pickle(args.file_rand_qids)
+        flag_rand_qids = True
+    
+    if os.path.exists(args.rand_dids):
+        
+        # for every rand qid find the relevant dids
 
-    args.gpt_results_dir = 'q2doc.json'
+        true_sub_doc_ids = [int(did) for qid, did in test_query_ids_doc_ids if int(qid) in rand_qids]
 
+        dict_qid_rand_doc_ids = load_pickle(args.rand_dids) # for every rand qid top k dids predictions
+
+        # add top k dids predictions to the big dids list
+        for values_list in dict_qid_rand_doc_ids.values():
+            true_sub_doc_ids.extend(values_list)
+        # remove duplicates
+        true_sub_doc_ids = list(set(true_sub_doc_ids))
+        create_pickle(true_sub_doc_ids,f'with_true_{args.rand_dids}')
+        doc_ids_dict = {new_id:old_id for new_id, old_id in enumerate(true_sub_doc_ids)}
+        doc_embs = doc_embs[true_sub_doc_ids]
+        
     RANK_CONSTANT = 60
-    K = 30000
+    K = len(doc_embs)#30000
     replace_find = True
     SCORE = f'1/({RANK_CONSTANT}+rank' #'emb'
     THRESHOLD = 0 #'None'
@@ -67,7 +94,7 @@ def main(args):
                          normalize_embeddings=normalize_embeddings, score=SCORE, threshold=THRESHOLD,return_dict=False)
 
     data = {'and':'avg','or':'maximum','diff':'subtract','score':SCORE}
-    INFO = { 'model':METHOD,'checkpoint':CHECKPOINT,
+    INFO = { 'info':'rand qids true and top25 dids from bge','model':METHOD,'checkpoint':CHECKPOINT,
              'K':K,'threshold':THRESHOLD,'replace_find':replace_find,'template':args.gpt_results_dir
     }
     INFO.update(data)
@@ -95,7 +122,7 @@ def main(args):
             # print('forgot sth')
             count_forgot +=1
             continue
-
+        if flag_rand_qids and qid not in rand_qids: continue
         
         for ex in gold_examples:
             if ex.query==query:
@@ -109,6 +136,9 @@ def main(args):
             # Take the top k items
         initial_top_k_keys = [key for key, _ in sorted_items]
         top_k_keys = initial_top_k_keys[:1000]
+        if args.docs_subset:
+            top_k_keys = [doc_ids_dict[id] for id in top_k_keys]
+
         sorted_pred_doc_titles = [documents[idx].title for idx in top_k_keys]
         new_gold_examples.append(curr_ex)
 
@@ -117,14 +147,16 @@ def main(args):
 
     
     
-    
-    create_results(new_gold_examples, pred_examples, count_bug)
+    create_results(new_gold_examples, pred_examples, count_bug, INFO)
 
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='GPT API')
     parser.add_argument('--gpt_results_dir', type=str, default="docs_anon.json")
     parser.add_argument('--data_dir', type=str, default="quest_data")
+    parser.add_argument('--rand_dids', type=str, default="bge_large__0_rand_ids_top_25.pickle") # default false now!
+    parser.add_argument('--docs_subset',action='store_true') # default false now!
+    parser.add_argument('--file_rand_qids', type=str, default="rand_qids.pickle") # default false now!
     parser.add_argument('--result_dir', type=str, default="res_docs_anon_1000.json")
     parser.add_argument('--gold_examples_dir', type=str, default='test.jsonl')
     # parser.add_argument('--gold_examples_dir', type=str, default='test.jsonl')

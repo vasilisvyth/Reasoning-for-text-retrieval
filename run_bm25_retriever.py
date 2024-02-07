@@ -18,19 +18,20 @@ import random
 
 from absl import app
 from absl import flags
-
+import numpy as np
 from quest.bm25 import bm25_retriever
 from quest.common import document_utils
 from quest.common import example_utils
+import pickle
 
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("examples", "quest_data\\train_aug.jsonl", "Path to examples jsonl file.")
+flags.DEFINE_string("examples", "quest_data\\test.jsonl", "Path to examples jsonl file.")
 
 flags.DEFINE_string("docs", "quest_data\\documents.jsonl", "Path to document corpus jsonl file.")
 
-flags.DEFINE_string("output", "", "Path to write predictions jsonl file.")
+flags.DEFINE_string("output", "bm25.out", "Path to write predictions jsonl file.")
 
 flags.DEFINE_integer("sample", 0, "Number of examples to sample if > 0.")
 
@@ -44,28 +45,26 @@ def main(unused_argv):
   """
   examples = example_utils.read_examples(FLAGS.examples)
 
-  if FLAGS.sample > 0:
-    random.shuffle(examples)
-    examples = examples[:FLAGS.sample]
 
-  print("Reading documents.")
-  documents = document_utils.read_documents(FLAGS.docs)
-  all_doc_titles = [doc.title for doc in documents]
+  # if FLAGS.sample > 0:
+  #   random.shuffle(examples)
+  #   examples = examples[:FLAGS.sample]
 
+  # print("Reading documents.")
+  # documents = document_utils.read_documents(FLAGS.docs)
+  # all_doc_titles = [doc.title for doc in documents]
+  
+  # print("Finished reading documents.")
+  # print("Initializing BM25 retriever.")
+  # # calculate df, idf etc.
+  # retriever = bm25_retriever.BM25Retriever(documents)
+  # print("Finished initializing BM25 retriever.")
+  # with open('dum_bm25_obj.pickle', 'wb') as f:
+  #   pickle.dump(retriever,f)
 
-  for example in examples:
-    candidate_docs = example.docs 
-    for doc in candidate_docs:
-      if(doc not in all_doc_titles):
-        a=1
-
-  print(documents[2].text)
-  print("Finished reading documents.")
-  print("Initializing BM25 retriever.")
-  # calculate df, idf etc.
-  retriever = bm25_retriever.BM25Retriever(documents)
-  print("Finished initializing BM25 retriever.")
-
+  with open('dum_bm25_obj.pickle', 'rb') as f:
+    retriever = pickle.load(f)
+  assert (retriever.bm25.idf == retriever.bm25.idf)
   predictions = []
   for idx, example in enumerate(examples):
     print("Processing example %s." % idx)
@@ -77,7 +76,7 @@ def main(unused_argv):
             original_query=example.original_query,
             query=example.query,
             docs=docs,
-            scores=scores,
+            # scores=scores,
             metadata=example.metadata
         )
     )

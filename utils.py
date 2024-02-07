@@ -1,13 +1,14 @@
-from template_construction import create_rand_demonstrations, concat_demonstations, concat_test2prompt
+from templates.template_construction import create_rand_demonstrations, concat_demonstations, concat_test2prompt
 import random
 from collections import Counter
-from templates_wizard_lm import DEMONSTRATIONS_DOCS_ANON, TEST_TEMPLATE_DOCS_ANON
-from templates_code_llama import DEMONSTRATIONS_USER_ASSISTANT, TEST_TEMPLATE_USER_ASSISTANT, INSTRUCTION_USER_ASSISTANT
+from templates.templates_wizard_lm import DEMONSTRATIONS_DOCS_ANON, TEST_TEMPLATE_DOCS_ANON
+from templates.templates_code_llama import DEMONSTRATIONS_USER_ASSISTANT, TEST_TEMPLATE_USER_ASSISTANT, INSTRUCTION_USER_ASSISTANT
 import pickle
 import numpy as np
 import json
 import pandas as pd
 from pathlib import Path
+import json
 
 def tokenize_demonstrations(tokenizer, demonstrations, seed):
     seed_demonstrations = demonstrations[seed]
@@ -24,6 +25,32 @@ def tokenize_demonstrations(tokenizer, demonstrations, seed):
     return dict_tokenized_demonstations
 
 
+
+def json_list_to_txt(json_list, instruction, txt_file_path):
+    def write_chunk(chunk, file):
+        for line in chunk.splitlines():
+            file.write(line)
+            file.write('\n')
+    STEP = 19
+    with open(txt_file_path, 'w') as txt_file:
+        txt_file.write('Prompt: \n'+instruction+'\n')
+        for json_obj in json_list:
+            txt_file.write('-'*150+'\n')
+            for key, value in json_obj[0].items():
+                txt_file.write(f'"{key}": ')
+                if isinstance(value, dict) and len(value['text']) > 100:  # Check if value is a huge string
+                    # chunk_size = 100  # Set the chunk size according to your requirement
+                    # chunks = [value['text'][i:i+chunk_size] for i in range(0, len(value['text']), chunk_size)]
+                    # for chunk in chunks:
+                    #     write_chunk(chunk, txt_file)
+                    chunks = value['text'].split(' ')  # Split the string into multiple lines
+                    lines = [' '.join(chunks[i:i+STEP]) for i in range(0, len(chunks), STEP)]
+                    for line in lines:
+                        txt_file.write(line + '\n')
+                else:
+                    txt_file.write(json.dumps(value, indent=4))
+                txt_file.write(',\n')  # Add comma and new line after each key-value pair
+            txt_file.write('\n')  #
 
 
 def update_results(results_path, avg_recall_vals, avg_mrecall_vals, all_rec_per_template, avg_scores, info):
@@ -44,8 +71,15 @@ def update_results(results_path, avg_recall_vals, avg_mrecall_vals, all_rec_per_
         if pd.api.types.is_numeric_dtype(new_data[col]) and col != 'replace_find':
             new_data[col] = new_data[col].round(4)
 
-    # Update DataFrame with new results
+    # # Update DataFrame with new results
     results_df = pd.concat([results_df, new_data])
+
+    # results_df['info'] = 
+
+    # # Step 3: Rearrange columns to place the new column at the beginning
+    # column_order = ['info'] + [col for col in results_df.columns if col != 'info']
+    # results_df = results_df[column_order]
+
     # Save DataFrame to store/results.csv
     results_df.to_csv(results_path)
 

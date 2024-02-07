@@ -8,48 +8,84 @@ import os
 from quest.common import example_utils
 from python_interpreters_docs_anon import create_results
 import argparse
+from tqdm import tqdm
+# import faiss
+
+def create_doc_index():
+    doc_embed_1 = np.load(os.path.join(args.files_dir,'docs_0_70000_last_zero_shot_mistral.npy'))
+    doc_embed_2 = np.load(os.path.join(args.files_dir,'docs_70000_150000_last_zero_shot_mistral.npy'))
+    doc_embed_3 = np.load(os.path.join(args.files_dir,'docs_150000_220000_last_zero_shot_mistral.npy'))
+    doc_embed_4 = np.load(os.path.join(args.files_dir,'docs_220000_300000_last_zero_shot_mistral.npy'))
+    doc_embed_5 = np.load(os.path.join(args.files_dir,'docs_300000_325504_last_zero_shot_mistral.npy'))
+    doc_embed_6 = np.load(os.path.join(args.files_dir,'docs_325504_325505_last_zero_shot_mistral.npy'))
+    doc_embed = np.concatenate((doc_embed_1, doc_embed_2, doc_embed_3, doc_embed_4, doc_embed_5, doc_embed_6))
+    # doc_embed = doc_embed / np.linalg.norm(doc_embed, ord=2, axis=1, keepdims=True)
+    # print(doc_embed.shape[0],len(doc_title_map))
+    # assert(doc_embed.shape[0] == len(doc_title_map))
+    # index = faiss.IndexFlatIP(doc_embed[0].shape[1])
+    return doc_embed
+
+def test_correct_docs(doc_embed):
+    rand_docs = np.load(os.path.join(args.files_dir,'docs_rand_last_zero_shot_mistral.npy'))
+    rand_doc_ids = [0,1,70000-1,70000,70001, 150000-1,150000,150000+1, 220000-1,220000,220000+1,300000-1,300000,300000+1,325504-1,325504]
+    for index,rand_id in enumerate(rand_doc_ids):
+        if not np.allclose(rand_docs[index], doc_embed[rand_id]):
+            print(np.abs(rand_docs[index]- doc_embed[rand_id]))
+
 
 def main(args):
-    data_dir = 'quest_data'
-    rand_qids = load_pickle('files/rand_qids.pickle')
-    rand_qids = load_pickle('files/rand_qids_without_bugs.pickle')
-
-    dids = load_pickle('files/rand_doc_ids.pickle')
-    eval_k = 1000
-    gold_examples_dir = 'test.jsonl'
-    path_test = os.path.join(data_dir,gold_examples_dir)
-    gold_examples = example_utils.read_examples(path_test)
-    dict_query_ids_queries, test_query_ids_doc_ids = read_queries(os.path.join(data_dir, 'test_query_ids_queries.tsv'), 
-                                                                            os.path.join(data_dir,'test_query_ids_doc_ids.tsv'))
 
     # load docs
-    path_doc_text_list = os.path.join(data_dir,'doc_text_list.pickle')
-    path_doc_title_map = os.path.join(data_dir,'doc_title_map.tsv')
+    path_doc_text_list = os.path.join(args.data_dir,'doc_text_list.pickle')
+    path_doc_title_map = os.path.join(args.data_dir,'doc_title_map.tsv')
     doc_text_map, doc_title_map = read_docs(path_doc_text_list, path_doc_title_map)
 
-    query_embed = np.load('checkpoints/mistral_instruct/query_decomp_and_initial_rand_zero_shot_mistral.npy')
-    query_embed =torch.from_numpy(query_embed)
-    query_embed = F.normalize(query_embed, p=2, dim=1)
+    dict_query_ids_queries, test_query_ids_doc_ids = read_queries(os.path.join(args.data_dir, 'test_query_ids_queries.tsv'), 
+                                                                            os.path.join(args.data_dir,'test_query_ids_doc_ids.tsv'))
+    if args.rand_qids:
+        qids = load_pickle(args.rand_qids) #'files/rand_qids.pickle', 'files/rand_qids_without_bugs.pickle'
+        dict_query_ids_queries = {qid : dict_query_ids_queries[qid] for qid in qids}
 
-    doc_embed = np.load('checkpoints/mistral_instruct/rand_zero_shot_mistral.npy')
+    if args.rand_dids:
+        dids = load_pickle(args.rand_dids)
+    else:
+        dids = list(range(len(doc_text_map)))
+
+    eval_k = 1000
+    path_test = os.path.join(args.data_dir,args.test_examples)
+    gold_examples = example_utils.read_examples(path_test)
+
+    query_embed = np.load(os.path.join(args.files_dir,'query_0__last_zero_shot_mistral.npy'))
+    query_embed = torch.from_numpy(query_embed)
+    query_embed = F.normalize(query_embed, p=2, dim=1)
+    # query_embed = query_embed / np.linalg.norm(query_embed, ord=2, axis=1, keepdims=True)
+    
+    #doc_embed = np.load(os.path.join(args.files_dir,'docs_325504_325505_last_zero_shot_mistral.npy'))
+    doc_embed = create_doc_index()
+
+    test_correct_docs(doc_embed)
+    exit()
+
     doc_embed = torch.from_numpy(doc_embed)
-    doc_embed = F.normalize(doc_embed, p=2, dim=1) 
-    sim = query_embed @ doc_embed.T
-    top_k_values, top_k_indices = torch.topk(sim, eval_k, dim=1, sorted=True)
+    # doc_embed = torch.cat((doc_embed,doc_embed)) #! dummy
+    doc_embed = F.normalize(doc_embed, p=2, dim=1)
+    # sim = query_embed @ doc_embed.T
+    # top_k_values, top_k_indices = torch.topk(sim, eval_k, dim=1, sorted=True)
 
     all_pred_examples = []
     new_gold_examples = []
     # Creating examples and adding them to the list
-    for i, qid in enumerate(rand_qids):
-        query_text = dict_query_ids_queries[qid] # correct query
-        try:
-            pred_docs_ids = [dids[index] for index in top_k_indices[i].tolist()]
-            doc_texts = [doc_title_map[pr_id] for pr_id in pred_docs_ids]
-            scores = top_k_values[i].tolist()
-        except Exception as e:
-            print(e)
-            doc_texts = []
-            scores = None
+    for i, (qid, query_text) in tqdm(enumerate(dict_query_ids_queries.items())):
+        # query_text = dict_query_ids_queries[qid] # correct query
+        # sim, top_k_indices = doc_index.search(query_embed[i], k=eval_k)
+        sim = query_embed[i] @ doc_embed.T
+        top_k_values, top_k_indices = torch.topk(sim, eval_k, dim=-1, sorted=True)
+        print(f'ind {top_k_indices.shape} values {top_k_values.shape} sim {sim.shape}')
+        
+        pred_docs_ids = [dids[index] for index in top_k_indices.tolist()]
+        doc_texts = [doc_title_map[pr_id] for pr_id in pred_docs_ids]
+        scores = sim.tolist()
+        
 
         example = Example(query=query_text, docs=doc_texts, scores=scores)
         all_pred_examples.append(example)
@@ -58,17 +94,19 @@ def main(args):
             if ex.query==query_text:
                 curr_ex = ex
                 break
-
         new_gold_examples.append(curr_ex)
 
-    INFO = { 'info':'decomposition 0 rand qids true and top25 dids from bge','model':'mistral-instruct','checkpoint':'0-shot'
+    INFO = { 'info':f'decomposition 0 {args.rand_qids} and {args.rand_dids}','model':'mistral-instruct','checkpoint':'0-shot'
         }
     create_results(new_gold_examples, all_pred_examples, 0, INFO)
 
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='Calculate similarities given docs and queries')
-    parser.add_argument('--rand_dids',default='')
-    parser.add_argument('--rand_qids',default='')
+    parser.add_argument('--rand_dids',type=str,default='') #'files/rand_doc_ids.pickle'
+    parser.add_argument('--rand_qids',type=str,default='')
+    parser.add_argument('--test_examples',type=str,default='test.jsonl')
+    parser.add_argument('--data_dir',type=str,default='quest_data')
+    parser.add_argument('--files_dir',type=str,default='files')
     args = parser.parse_args()
     main(args)

@@ -1,18 +1,20 @@
 import func_timeout
 # import faiss
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModel
 from sentence_transformers import SentenceTransformer
 from bi_encoder import DenseBiEncoder
+from mistral_eval import last_token_pool
 import torch
 import pickle
 import numpy as np
+import torch.nn.functional as F
 from copy import deepcopy
 EXECUTION_TIMEOUT_TIME = 560
 # score_calculation = {
 #     'b25':
 
 # }
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 # docs = torch.load('scores_docs_check_4000.pt')
 # checkpoints/google/t5-v1_1-base/model/checkpoint-4000
@@ -48,6 +50,10 @@ class Operations():
         return max(x, y)
 
     @classmethod
+    def only_A(cls,x, y):
+        return x
+
+    @classmethod
     def subtract(cls,x, y):
         return x - y
 
@@ -73,10 +79,10 @@ class CustomDictOperations:
 
             # result[key] = tmp_result / counter #min(self.data[key],other.data[key])
             #result[key] = (self.data[key] * other.data[key])
-            result[key] = (self.data[key] + other.data[key]) / 2
-            #result[key] = Operations.calculate_score(self.data[key],other.data[key],'and')
+            # result[key] = (self.data[key] + other.data[key]) / 2
+            result[key] = Operations.calculate_score(self.data[key],other.data[key],'and')
         return CustomDictOperations(result)
-    # def __and__(self, *others):
+    # def intersection(self, *others):
     #     result = {}
     #     key_sets = [set(d.data.keys()) for d in [self] + list(others)]
     #     common_keys = set.intersection(*key_sets)
@@ -91,10 +97,10 @@ class CustomDictOperations:
     def __or__(self, other): #__or__ union
         result = {}
         for key in set(self.data.keys()) | set(other.data.keys()):
-            result[key] = max(self.data.get(key, float('-inf')), other.data.get(key, float('-inf')))
-            #result[key] = Operations.calculate_score(self.data.get(key, float('-inf')), other.data.get(key, float('-inf')),'or')
+            #result[key] = max(self.data.get(key, float('-inf')), other.data.get(key, float('-inf')))
+            result[key] = Operations.calculate_score(self.data.get(key, float('-inf')), other.data.get(key, float('-inf')),'or')
         return CustomDictOperations(result)
-    # def __or__(self, *others):
+    # def union(self, *others):
     #     result = {}
     #     key_sets = [set(d.data.keys()) for d in [self] + list(others)]
     #     all_keys = set.union(*key_sets)
@@ -105,10 +111,10 @@ class CustomDictOperations:
 
     #     return CustomDictOperations(result)
 
-    def __sub__(self, other): #__sub__
+    def __sub__(self, other): #difference
         result = self.data.copy()
         for key in set(self.data.keys()) & set(other.data.keys()):
-            result[key] -= other.data[key]
+            result[key] = Operations.calculate_score(self.data.get(key, float('-inf')), other.data.get(key, float('-inf')),'diff')
       
         return CustomDictOperations(result)
 
@@ -123,36 +129,126 @@ class CustomDictOperations:
 # dict3 = CustomDictOperations({'a': 3, 'b': 4, 'e': 5})
 
 # result = dict1.union(dict2, dict3)
+def apply_threshold(threshold, top_k_indices, top_k_values):
+    if not isinstance(threshold, str):
+        top_k_indices = top_k_indices[top_k_values > threshold]
+        top_k_values = top_k_values[top_k_values > threshold]
+    return top_k_indices, top_k_values
 
-class DocumentFinder:
-    # tokenizer = AutoTokenizer.from_pretrained('google/t5-v1_1-base')  # Your tokenizer initialization
-    # docs = torch.load('checkpoints/4913e0dd-b8/scores_docs_check_13500.pt', map_location=device)  # Your docs initialization
-    # # docs = torch.from_numpy(np.load('checkpoints/zero_shot_t5_large.npy'))
-    # method = 't5-base'
-    # results = {}
+def convert_to_1dlist(values):
+    if isinstance(values, (torch.Tensor, np.ndarray)):
+        if values.ndim > 1:
+            values = values.squeeze().tolist()
+        else:
+            values = values.tolist()
+    else:
+        raise('Only support torch tensors and numpy arrays')
+    
+    return values
+
+def remove_prefix(query, replace_find):
+    if replace_find:
+        query = query.replace('find ','')
+    return query
+
+def min_max_normalization(similarities):
+    max_sim = torch.max(similarities,dim=-1).values
+    min_sim = torch.min(similarities,dim=-1).values
+    
+    new_sim = (similarities - min_sim) / (max_sim - min_sim) 
+    return new_sim
+
+class VP_HuggingFace:
 
     @classmethod
-    def init(cls, model_name, docs, tokenizer, k, method, replace_find, score, threshold='None',  use_sentence_transformer=False,normalize_embeddings=False, 
-            return_dict=True, oracle_examples_dict = {}):
+    def init(cls, device, model_name, docs, tokenizer, k, method, replace_find, score, threshold='None', normalize_embeddings=False, 
+            oracle_examples_dict = None, results= {}, use_cache = False):
         cls.tokenizer = tokenizer 
-        cls.results = {}
+        cls.results = results
         cls.k = k
         cls.replace_find = replace_find
         cls.method = method
-        cls.docs = docs.cuda() if method == 'bge-large' else docs
+        print(f'method {method}')
+        cls.device = torch.device('cpu') if use_cache else device
+        cls.docs = docs.to(cls.device)
         cls.normalize_embeddings = normalize_embeddings
         cls.score = score
         cls.threshold = threshold
-        cls.return_dict = return_dict
         cls.oracle_examples_dict = oracle_examples_dict
-        if use_sentence_transformer:
-            cls.model = SentenceTransformer(model_name)
-        elif 'bm25' in model_name:
-            with open(model_name, 'rb') as f:
-                 cls.model = pickle.load(f)
+        cls.use_cache = use_cache
+        if 'mistral' in model_name:
+            cls.model = AutoModel.from_pretrained(model_name)
+            cls.model.to(device)
         else:
             cls.model = DenseBiEncoder(model_name, False, False)
+            cls.model.to(device)
 
+    @classmethod
+    def find_docs(cls, original_query, query, largest=True):
+
+        query = remove_prefix(query, cls.replace_find)
+        if cls.method == 'mistral':
+            task_description = f'Given a web search query, retrieve relevant passages that answer the query'
+            query = f'Instruct: {task_description}\nQuery: {query}'
+        
+        if original_query not in cls.results: # if first subquestion that we encounter
+            cls.results[original_query] = {}
+
+        if query not in cls.results[original_query]:
+            cls.results[original_query][query] = {}
+
+        tokenized_query = cls.tokenizer.encode_plus(query, return_tensors='pt')
+        input_ids, attention_mask = tokenized_query['input_ids'], tokenized_query['attention_mask']
+        input_ids, attention_mask = input_ids.to(cls.device), attention_mask.to(cls.device)
+
+        with torch.no_grad():
+            if cls.method == 'mistral':
+                if not cls.use_cache:
+                    outputs = cls.model(input_ids, attention_mask)
+                    embed_query = last_token_pool(outputs.last_hidden_state, attention_mask)
+                    embed_query = F.normalize(embed_query, p=2, dim=1) 
+                else:
+                    embed_query = cls.results[original_query][query]['norm_q_embed'].cpu()
+            else:
+                embed_query = cls.model.encode_mean_polling(input_ids, attention_mask)
+
+        similarities = torch.matmul(embed_query, cls.docs.t())
+        new_sim = min_max_normalization(similarities)
+        top_k_values, top_k_indices = torch.topk(new_sim, cls.k, dim=1, sorted=True, largest = largest)
+        top_k_indices, top_k_values = apply_threshold(cls.threshold, top_k_indices, top_k_values)
+
+
+        top_k_indices = convert_to_1dlist(top_k_indices)
+        top_k_values = convert_to_1dlist(top_k_values)
+        cls.results[original_query][query] = {
+            'top_k_values': top_k_values,
+            'top_k_indices': top_k_indices
+        }
+        cls.results[original_query][query]['norm_q_embed'] = embed_query
+
+        map_ind_sim = {ind:val for ind, val in zip(top_k_indices, top_k_values)}
+        ranked_doc = {key: Operations.custom_score(rank) for rank, key in enumerate(map_ind_sim, 1)} if cls.score != 'emb' else map_ind_sim
+
+        return CustomDictOperations(ranked_doc)
+
+#! use the code below
+class VP_SentenceTransformer:
+    @classmethod
+    def init(cls, device, model_name, docs, k, method, replace_find, score, threshold='None',  normalize_embeddings=False, 
+            oracle_examples_dict = None, results={}, use_cache=False):
+        cls.results = results if use_cache else {}
+        cls.k = k
+        cls.replace_find = replace_find
+        cls.method = method
+        cls.use_cache = use_cache
+        cls.device = torch.device('cpu') if use_cache else device
+        cls.docs = docs.to(cls.device)
+        cls.normalize_embeddings = normalize_embeddings
+        cls.score = score
+        cls.threshold = threshold
+        cls.oracle_examples_dict = oracle_examples_dict
+        cls.model = SentenceTransformer(model_name)
+    
     @classmethod
     def replace_rows(cls, original_query):
         original_tensor = deepcopy(cls.docs)
@@ -170,104 +266,109 @@ class DocumentFinder:
         # Replace the corresponding rows in the original tensor
         original_tensor[selected_doc_ids] = replacement_tensor
         return original_tensor
-
-
+    
     @classmethod
     def find_docs(cls, original_query, query, largest=True):
-        # query = query.replace('what are some ','')
-        # query = query.replace('what are ','')
-        if cls.replace_find:
-            query = query.replace('find ','')
-
-
-        
-        if DocumentFinder.method == 't5-base':
-        # query = query.replace('find ','')
-
-            tokenized_query = cls.tokenizer.encode_plus(query, return_tensors='pt')
-            input_ids, attention_mask = tokenized_query['input_ids'], tokenized_query['attention_mask']
-            input_ids, attention_mask = input_ids.to(device), attention_mask.to(device)
-
-            with torch.no_grad():
-                embed_query = cls.model.encode_mean_polling(input_ids, attention_mask)
-
-            similarities = torch.matmul(embed_query, cls.docs.t())
-
-
-            max_sim = torch.max(similarities,dim=1).values
-            min_sim = torch.min(similarities,dim=1).values
-            
-            new_sim = (similarities - min_sim) / (max_sim - min_sim) 
-
-            top_k_values, top_k_indices = torch.topk(new_sim, cls.k, dim=1, sorted=True, largest = largest)
-
-            # new_k_values, new_k_indices = torch.topk(new_sim, cls.k, dim=1, sorted=True, largest = largest)
-
-            # top_k_values, top_k_indices = top_k_values.squeeze().tolist(), top_k_indices.squeeze().tolist()
-            
-        elif DocumentFinder.method == 'bm25':
-            top_k_indices, top_k_values = cls.model.get_docs_ids_and_scores(query, topk= cls.k)
-            top_k_values = torch.tensor(top_k_values) 
-        elif DocumentFinder.method == 'gtr' or DocumentFinder.method == 'bge-large':
-            if DocumentFinder.method == 'bge-large':
-                Instruction = 'Represent this sentence for searching relevant passages: '#Represent this sentence for searching relevant passages: '
-                query = Instruction+query
-            embed_query = cls.model.encode(query,convert_to_tensor=True, normalize_embeddings = cls.normalize_embeddings)
-
-            if cls.oracle_examples_dict is not None:
-                docs = cls.replace_rows(original_query)
-                similarities = torch.matmul(embed_query, docs.t())
-            else:
-                similarities = torch.matmul(embed_query, cls.docs.t())
-
-
-            max_sim = torch.max(similarities,dim=-1).values
-            min_sim = torch.min(similarities,dim=-1).values
-            
-            new_sim = (similarities - min_sim) / (max_sim - min_sim) 
-
-            top_k_values, top_k_indices = torch.topk(new_sim, cls.k, dim=-1, sorted=True, largest = largest)
-
-            # new_k_values, new_k_indices = torch.topk(new_sim, cls.k, dim=1, sorted=True, largest = largest)
-
-        else:
-            raise(f'{DocumentFinder.method} is not allowed. We only allow bm25, gtr, bge-large or t5-base')
+        query = remove_prefix(query, cls.replace_find)
 
         if original_query not in cls.results: # if first subquestion that we encounter
             cls.results[original_query] = {}
 
-        if not isinstance(cls.threshold, str):
-            top_k_indices = top_k_indices[top_k_values > cls.threshold]
-            top_k_values = top_k_values[top_k_values > cls.threshold]
+        if cls.method == 'bge-large':
+            Instruction = 'Represent this sentence for searching relevant passages: '#Represent this sentence for searching relevant passages: '
+            query = Instruction+query
+        if not cls.use_cache:
+            embed_query = cls.model.encode(query,convert_to_tensor=True, normalize_embeddings = cls.normalize_embeddings)
+        else:
+            embed_query = cls.results[original_query][query]['norm_q_embed'].cpu()
 
-        if torch.is_tensor(top_k_values) or isinstance(top_k_values, np.ndarray):
-            if len(top_k_values.shape) > 1:
-                top_k_values = top_k_values.squeeze()
+        if cls.oracle_examples_dict is not None: # WHEN WE CHANGE EVERY TIME
+            docs = cls.replace_rows(original_query)
+            similarities = torch.matmul(embed_query, docs.t())
+        else:
+            similarities = torch.matmul(embed_query, cls.docs.t())
 
-            top_k_values = top_k_values.tolist()
 
-        if torch.is_tensor(top_k_indices) or isinstance(top_k_indices, np.ndarray):
-            if len(top_k_indices.shape) > 1:
-                top_k_indices = top_k_indices.squeeze()
-            top_k_indices = top_k_indices.tolist()
+        new_sim = min_max_normalization(similarities)
+        top_k_values, top_k_indices = torch.topk(new_sim, cls.k, dim=-1, sorted=True, largest = largest)
+        top_k_indices, top_k_values = apply_threshold(cls.threshold, top_k_indices, top_k_values)
 
-        map_ind_values = {ind:val for ind, val in zip(top_k_indices, top_k_values)}
-
+        top_k_indices = convert_to_1dlist(top_k_indices)
+        top_k_values = convert_to_1dlist(top_k_values)
+        map_ind_sim = {ind:val for ind, val in zip(top_k_indices, top_k_values)}
         cls.results[original_query][query] = {
             'top_k_values': top_k_values,
             'top_k_indices': top_k_indices
         }
-        if cls.score == 'emb':
-            ranked_doc = map_ind_values
-        else:
-            # ranked_doc = {key: 1/(60+rank) for rank, key in enumerate(map_ind_values, 1)}
-            ranked_doc = {key: Operations.custom_score(rank) for rank, key in enumerate(map_ind_values, 1)}
-        # answers = set(top_k_indices)
-        if cls.return_dict:
-            custom_dict = CustomDictOperations(ranked_doc)
-            return custom_dict
-        else:
-            return ranked_doc
+        cls.results[original_query][query]['norm_q_embed'] = embed_query
+        ranked_doc = {key: Operations.custom_score(rank) for rank, key in enumerate(map_ind_sim, 1)} if cls.score != 'emb' else map_ind_sim
+        return CustomDictOperations(ranked_doc)
+
+
+class VP_BM25:
+    @classmethod
+    def init(cls, model_name, docs, k, replace_find, score, threshold='None',
+            oracle_examples_dict = None):
+        cls.results = {}
+        cls.k = k
+        cls.replace_find = replace_find
+        cls.docs = docs
+        cls.score = score
+        cls.threshold = threshold
+        cls.oracle_examples_dict = oracle_examples_dict
+        with open(model_name, 'rb') as f:
+            cls.model = pickle.load(f)
+
+    @classmethod
+    def find_docs(cls, original_query, query, largest=True):
+        top_k_indices, top_k_values = cls.model.get_docs_ids_and_scores(query, topk= cls.k)
+        top_k_values = torch.tensor(top_k_values)
+        #todo check that no problem is created from not converting to 1d lists here
+
+        new_sim = min_max_normalization(top_k_values)
+        top_k_values, top_k_indices = torch.topk(new_sim, cls.k, dim=-1, sorted=True, largest = largest)
+        top_k_indices, top_k_values = apply_threshold(cls.threshold, top_k_indices, top_k_values)
+
+        top_k_indices = convert_to_1dlist(top_k_indices)
+        top_k_values = convert_to_1dlist(top_k_values)
+        map_ind_sim = {ind:val for ind, val in zip(top_k_indices, top_k_values)}
+        cls.results[original_query][query] = {
+            'top_k_values': top_k_values,
+            'top_k_indices': top_k_indices
+        }
+        ranked_doc = {key: Operations.custom_score(rank) for rank, key in enumerate(map_ind_sim, 1)} if cls.score != 'emb' else map_ind_sim
+        return CustomDictOperations(ranked_doc)
+
+# class DocumentFinder:
+#     tokenizer = AutoTokenizer.from_pretrained('google/t5-v1_1-base')
+#     docs = torch.load('checkpoints/4913e0dd-b8/scores_docs_check_13500.pt', map_location=device)
+#     method = 't5-base'
+#     results = {}
+
+#     @classmethod
+#     def init(cls, model_name, docs, tokenizer, k, method, replace_find, score, threshold='None', use_sentence_transformer=False,
+#              normalize_embeddings=False, return_dict=True, oracle_examples_dict=None):
+#         # ... (Your existing initialization code)
+
+#     @classmethod
+#     def replace_rows(cls, original_query):
+#         # ... (Your existing replace_rows method)
+
+#     @classmethod
+#     def find_docs(cls, original_query, query, largest=True):
+#         method_classes = {
+#             't5-base': T5Method,
+#             'mistral': MistralMethod,
+#             'bm25': BM25Method,
+#             'gtr': GTRMethod,
+#             'bge-large': GTRMethod  # Assuming 'bge-large' uses the same logic as 'gtr'
+#         }
+
+#         method_class = method_classes.get(cls.method)
+#         if method_class:
+#             return method_class.find_docs(cls, original_query, query, largest)
+#         else:
+#             raise ValueError(f'{cls.method} is not allowed. We only allow bm25, gtr, bge-large or t5-base')
 
 
 def safe_execute(code_string: str, keys=None):
@@ -325,10 +426,3 @@ def synthesize_program(result: str, prefix: str) -> str:
         # program += line + '\n'
             
     return program
-
-# for i in range(1):
-#     safe_execute("DocumentFinder.find_docs('lala','subquery1')")
-#     safe_execute("DocumentFinder.find_docs('lala','subquery2')")
-#     safe_execute("DocumentFinder.find_docs('qe','saba')")
-
-# print(DocumentFinder.results)

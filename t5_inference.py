@@ -12,19 +12,22 @@ from sentence_transformers import SentenceTransformer
 import pickle
 from quest.common.example_utils import Example
 from analyze_retriever import calc_mrec_rec
-from prepare_dataset import read_docs, read_queries
-from utils import load_pickle, update_results
+from data.prepare_dataset import read_docs, read_queries
+from utils import load_pickle, update_results, create_pickle
 import os
-from prepare_dataset import read_docs
+from data.prepare_dataset import read_docs
 from run_eval import calc_f1_pr_rec
 
-def calculate_queries_scores(args, model, doc_embs, dict_query_ids_queries, doc_title_map, eval_k, all_dids, gold_examples):
+def calculate_queries_scores(args, model, doc_embs, dict_query_ids_queries, doc_title_map, eval_k, all_dids, gold_examples, device):
     run = defaultdict(list)
     doc_embs = torch.from_numpy(doc_embs)
+    doc_embs = doc_embs.to(device)
     Instruction = 'Represent this sentence for searching relevant passages: '
     all_pred_examples = []
     queries = list(dict_query_ids_queries.values())
     qids = list(dict_query_ids_queries.keys())
+    top_k_docs_ids = {}
+    k = 25
     for idx in tqdm(
         range(0, len(queries), args.batch_size),
         desc="Encoding queries and search",
@@ -51,6 +54,7 @@ def calculate_queries_scores(args, model, doc_embs, dict_query_ids_queries, doc_
 
             example = Example(query=query_text, docs=doc_texts, scores=scores)
             all_pred_examples.append(example)
+            top_k_docs_ids[qid] = pred_docs_ids[:k]
         
 
     avg_prec, avg_rec, avg_f1 = calc_f1_pr_rec(gold_examples, all_pred_examples)
@@ -66,6 +70,7 @@ def calculate_queries_scores(args, model, doc_embs, dict_query_ids_queries, doc_
 
     path_results_csv = os.path.join('checkpoints','results.csv')
     update_results(path_results_csv, avg_recall_vals, avg_mrecall_vals, all_rec_per_template, avg_scores, INFO)
+    create_pickle(top_k_docs_ids,f'bge_large__0_rand_ids_top_{k}.pickle')
     # special care is needed for the NOT operator
     k = 10  # Number of results you want
     # scores, indices = index.search(query_vector, k)
@@ -146,7 +151,23 @@ def main(args):
         doc_text_map, doc_title_map = read_docs(os.path.join(data_dir,'doc_text_list.pickle'), os.path.join(data_dir,'doc_title_map.tsv'))
         dict_query_ids_queries, _ = read_queries(os.path.join(data_dir,'test_query_ids_queries.tsv'), 
                                                  os.path.join(data_dir,'test_query_ids_doc_ids.tsv'))
-        calculate_queries_scores(args, model, doc_embs, dict_query_ids_queries, doc_title_map, eval_k, all_dids, gold_examples)
+        if os.path.exists(args.rand_qids):
+            rand_qids = load_pickle(args.rand_qids)
+            new_dict_query_ids_queries = {}
+            new_gold_examples = []
+            for qid in rand_qids:
+                query = dict_query_ids_queries[qid]
+                new_dict_query_ids_queries[qid] = query
+                
+                for ex in gold_examples:
+                    if ex.query == query:
+                        new_gold_examples.append(ex)
+                        break
+
+            dict_query_ids_queries = new_dict_query_ids_queries
+            gold_examples = new_gold_examples
+
+        calculate_queries_scores(args, model, doc_embs, dict_query_ids_queries, doc_title_map, eval_k, all_dids, gold_examples, device)
     
 
 
@@ -159,6 +180,8 @@ if __name__=='__main__':
     parser.add_argument(
         "--doc_dir", type=str, default="doc_text_map.tsv", help="path to document collection \
                 which consists of pairs (idx, document.title + " " + document.text) ")
+    parser.add_argument(
+        "--rand_qids", type=str, default='rand_qids.pickle', help="random query ids file")
     parser.add_argument(
         "--id_query_dir", type=str, default='quest_data\\test_query_ids_queries.tsv',help="path to query_id to query text \
                 which consists of pairs (idx, query_text) ")

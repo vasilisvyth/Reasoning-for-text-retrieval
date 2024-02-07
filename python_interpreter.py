@@ -3,7 +3,7 @@ import json
 import argparse
 import re
 import numpy as np
-from templates import template2logic
+from templates.templates import template2logic
 
 def find_all_positions(text, substring):
     positions = []
