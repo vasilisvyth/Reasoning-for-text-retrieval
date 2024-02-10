@@ -18,7 +18,18 @@ from utils import print_args, bytes_to_giga_bytes,load_pickle, create_pickle
 import gc
 from templates.mistral_prompt import Instruction, templates_dict
 import cProfile
-from mistral_embedding import last_token_pool
+#from mistral_embedding import last_token_pool
+
+# same method in bi_encoder
+def last_token_pool(model, input_ids, attention_mask):
+    last_hidden_states = model(input_ids, attention_mask)
+    left_padding = (attention_mask[:, -1].sum() == attention_mask.shape[0])
+    if left_padding:
+        return last_hidden_states[:, -1]
+    else:
+        sequence_lengths = attention_mask.sum(dim=1) - 1
+        batch_size = last_hidden_states.shape[0]
+        return last_hidden_states[torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths]
 
 def get_detailed_query_instruct(task_description: str, query: str) -> str:
     return f'Instruct: {task_description}\nQuery: {query}'
@@ -47,8 +58,8 @@ def create_embeddings(dataloader, rand_dids, device, model):
             batch = {key: batch[key].to(device) for key in batch}
             # tokenizer.batch_decode(input_ids)[0]
             # generated_ids = model.generate(input_ids, attention_mask = attention_mask,max_new_tokens=max_new_tokens)
-            outputs = model(**batch)
-            embeddings = last_token_pool(outputs.last_hidden_state, batch['attention_mask'])
+            # outputs = model(**batch)
+            embeddings = last_token_pool(model, batch['input_ids'], batch['attention_mask'])
             last_layer_embeds.append(embeddings.cpu().numpy())
             torch_last_layer_embeds.append(embeddings.cpu())
             # cur_all_embed = [hidden_state[:,-1].cpu() for hidden_state in outputs.hidden_states[-6:-1]] # len(layers) each torch size[batch_size, hidden_dim]

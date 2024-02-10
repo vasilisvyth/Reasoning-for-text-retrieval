@@ -15,14 +15,14 @@ import torch
 import os
 from transformers import LlamaForCausalLM, CodeLlamaTokenizer, DataCollatorWithPadding, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from templates import demonstration_op_map
-from code_llm_dataset import Code_llm_dataset
+from datasets.code_llm_dataset import Code_llm_dataset
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import uuid
 import pickle
 import json
 from seeds import set_seed
-from prepare_dataset import read_queries
+from data.prepare_dataset import read_queries
 from collections import Counter
 from generate_code import print_args
 from collections import defaultdict

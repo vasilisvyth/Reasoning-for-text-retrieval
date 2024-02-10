@@ -97,8 +97,6 @@ def build_positive_pairs(dict_query_ids_queries, query_ids_doc_ids, doc_text_map
         dict_query_ids_queries: dict of the form query_id: query
         query_ids_doc_ids: list of list of the form [str(query_id), str(doc_id)]
         doc_text_map: dict of the form doc_id : doc
-        use_complex_queries: bool
-        examples: list of Examples
     '''
     
     positive_query_ids = []
@@ -117,7 +115,6 @@ def build_positive_pairs(dict_query_ids_queries, query_ids_doc_ids, doc_text_map
             positive_docs.append(doc)
         else:
             print('query removed from training')
-            a=1
     
     return positive_query_ids, positive_doc_ids, positive_queries, positive_docs
 

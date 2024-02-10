@@ -180,7 +180,7 @@ class VP_HuggingFace:
             cls.model = AutoModel.from_pretrained(model_name)
             cls.model.to(device)
         else:
-            cls.model = DenseBiEncoder(model_name, False, False)
+            cls.model = DenseBiEncoder(model_name, False, False, 'avg')
             cls.model.to(device)
 
     @classmethod

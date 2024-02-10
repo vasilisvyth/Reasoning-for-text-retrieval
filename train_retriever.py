@@ -18,6 +18,7 @@ from seeds import set_seed
 import uuid
 import wandb
 from torch import optim
+from transformers import MistralConfig
 
 
 def print_args(args):
@@ -28,15 +29,21 @@ def print_args(args):
 
 def main(args):
     # args.pretrained = 'google/t5-v1_1-base'
-    args.use_complex_queries = True
+    # args.only_simple_queries = True
     # args.do_only_eval  = True
+    args.tokenizer ='mistralai/Mistral-7B-v0.1'
+    args.do_train = True
     print_args(args)
     set_seed(args.seed)
     
     # load model and tokenizer
-    model = DenseBiEncoder(args.pretrained, args.scale_logits, args.right_loss)
+    model = DenseBiEncoder(args.pretrained, args.scale_logits, args.right_loss, args.aggr_type)
     # model = DenseBiEncoder.from_pretrained(args.pretrained, args.scale_logits, args.right_loss)
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
+
+    if args.tokenizer =='mistralai/Mistral-7B-v0.1':
+        tokenizer.add_special_tokens({'pad_token': '</s>'})
+        tokenizer.pad_token_id = tokenizer.eos_token_id
     
     # Load training and validation examples
     examples_train_aug = example_utils.read_examples(os.path.join(args.data_dir,'train_aug.jsonl'))
@@ -51,7 +58,7 @@ def main(args):
     doc_text_map, doc_title_map = read_docs(os.path.join(args.data_dir,'doc_text_list.pickle'), os.path.join(args.data_dir,'doc_title_map.tsv'))
 
     # Remove queries with metadata!= '_' from the dictionary
-    if not args.use_complex_queries:
+    if args.only_simple_queries:
         print(f'Training set Total queries before removing complex queries: {len(train_dict_query_ids_queries)}')
         remove_complex_queries(examples_train_aug, train_dict_query_ids_queries)
         print(f'Training set Total queries after removing complex queries: {len(train_dict_query_ids_queries)}')
@@ -63,6 +70,7 @@ def main(args):
 
     # build positive pairs for training
     train_query_ids, train_doc_ids, train_queries, train_docs = build_positive_pairs(train_dict_query_ids_queries, train_query_ids_doc_ids, doc_text_map)
+    assert(len(train_query_ids) == len(train_doc_ids) == len(train_queries) ==  len(train_docs))
 
     # Load validation and test data related files
     val_dict_query_ids_queries, _ = read_queries(os.path.join(args.data_dir,'val_query_ids_queries.tsv'), 
@@ -76,19 +84,22 @@ def main(args):
 
 
     # if we don't want to use complex queries then remove them
-    if not args.use_complex_queries:
+    if args.only_simple_queries:
         print(f'Val set Total queries before removing complex queries: {len(val_dict_query_ids_queries)}')
         remove_complex_queries(examples_val, val_dict_query_ids_queries)
         print(f'Val set Total queries after removing complex queries: {len(val_dict_query_ids_queries)}')
 
     if 'bge' in args.tokenizer:
-        train_queries = ['Represent this sentence for searching relevant passages: '+query for query in train_queries]
+        bge_prefix = 'Represent this sentence for searching relevant passages: '
+        train_queries = [bge_prefix+query for query in train_queries]
+        val_dict_query_ids_queries = {id:bge_prefix+query for id, query in val_dict_query_ids_queries.items()}
+        test_dict_query_ids_queries = {id:bge_prefix+query for id, query in test_dict_query_ids_queries.items()}
     
 
     # create dataset for training
     train_pair_dataset = PairDataset(train_query_ids, train_doc_ids, train_queries, train_docs,examples_train_aug)
 
-    # create dataset for validation
+    # create dataset for validation and tokenize
     eval_dataset = {}
     eval_dataset['queries']= EvaluateQueryDataset(examples_val, val_dict_query_ids_queries, tokenizer)
     eval_dataset['docs'] = EvaluateDocsDataset(doc_text_map, tokenizer)
@@ -132,7 +143,7 @@ def main(args):
         eval_steps=args.eval_steps, #Number of update steps between two evaluations
         save_total_limit=2, # saves best and another one
         # optim = 'adafactor',
-        eval_delay = 10000,
+        eval_delay = 2 if args.eval_steps < 10 else 10000 ,
         # lr_scheduler_type='linear',
         report_to="wandb",
         run_name=args.wb_run_name,  # name of the W&B run (optional)
@@ -149,7 +160,7 @@ def main(args):
     if 't5' in args.pretrained:
         optimizer = Adafactor(model.parameters(), scale_parameter=scale_parameter, relative_step=relative_step, warmup_init=warmup_init, lr=args.lr)
     else:
-        optimizer=optim.AdamW(model.parameters(),lr=args.lr, betas=(0.9,0.95))
+        optimizer=optim.AdamW(model.parameters(),lr=args.lr, betas=(0.9,0.999))
     # lr_scheduler = AdafactorSchedule(optimizer)
 
     # trainer = Trainer(model, training_args, data_collator = pair_collator, train_dataset=train_pair_dataset,
@@ -226,6 +237,9 @@ if __name__=='__main__':
         "--wb_run_name", type=str, default='debug', help='name of weight and bias run',
     )
     parser.add_argument(
+        "--aggr_type", type=str, default='last', help='aggregation type',
+    )
+    parser.add_argument(
         "--scale_logits", action='store_true', help='whether to scale the logits with 100',
     ) # default is false
     parser.add_argument(
@@ -238,7 +252,7 @@ if __name__=='__main__':
         "--dataloader_num_workers", type=int, default=0, help="number of workers"
     ) 
     parser.add_argument(
-        "--use_complex_queries", action='store_true', help='whether to calculate the right'
+        "--only_simple_queries", action='store_true', help='whether to calculate the right'
     ) # default false
     parser.add_argument(
         "--split", action='store_true', help='whether to consider extra 250 instances from training as validation'

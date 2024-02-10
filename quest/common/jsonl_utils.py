@@ -46,9 +46,9 @@ def read(filepath, limit=None, verbose=False):
     for idx, line in enumerate(jsonl_file):
       if limit is not None and idx >= limit:
         break
-      if verbose and idx % 100 == 0:
-        # Print the index every 100 lines.
-        print("Processing line %s." % idx)
+      # if verbose and idx % 100 == 0:
+      #   # Print the index every 100 lines.
+      #   print("Processing line %s." % idx)
       try:
         dict = json.loads(line)
         # templates.append(dict['metadata']['template'])

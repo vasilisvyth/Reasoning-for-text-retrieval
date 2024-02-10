@@ -56,6 +56,38 @@ class BM25Retriever(object):
       A List of (document title, score) tuples of length `topk`.
     """
     scores = self._compute_scores(query)
-    sorted_docs_ids = np.argsort(scores)
+    sorted_docs_ids = np.argsort(scores) # k smallest (negatives)
     topk_doc_ids = sorted_docs_ids[:topk]
     return [(self.documents[idx].title, scores[idx]) for idx in topk_doc_ids]
+  
+  def get_docs_ids_and_scores(self, query, topk=100):
+    """Retrieve documents based on BM25 scores.
+
+    Args:
+      query: The query to retrieve documents for.
+      topk: Return top-k document ids.
+
+    Returns:
+      A List of (document title, score) tuples of length `topk`.
+    """
+    # scores = self._compute_scores(query)
+    tokenized_query = nltk.tokenize.word_tokenize(query)
+    bm25_scores = self.bm25.get_scores(tokenized_query)
+    scores = []
+    for idx in range(len(self.documents)):
+      scores.append(bm25_scores[idx])# initially there was a -. Maybe this affects the zeros? No
+    
+    scores = np.array(scores)
+    
+    # Min-max normalization formula
+    min_val = np.min(scores)
+    max_val = np.max(scores)
+    scores = (scores - min_val) / (max_val - min_val)
+
+    sorted_docs_ids = (-1*scores).argsort() #https://www.geeksforgeeks.org/how-to-use-numpy-argsort-in-descending-order-in-python/
+    topk_doc_ids = sorted_docs_ids[:topk]
+
+    # max_id = topk_doc_ids[0]
+    # scores[max_id] == np.max(scores)
+    return topk_doc_ids, [scores[idx] for idx in topk_doc_ids]
+    # return [(idx, scores[idx]) for idx in topk_doc_ids]
