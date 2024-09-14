@@ -59,7 +59,7 @@ def finetuned_embed_docs():
  
 
 def test_program_check():
-    file = open('docs_anon.json', "r")
+    file = open(os.path.join('data','predictions.json'), "r")
     documents = document_utils.read_documents("quest_data\\documents.jsonl")
     results_json = json.load(file)
     for query in tqdm(results_json):

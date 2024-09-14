@@ -1,0 +1,1 @@
+In this project, we leverage in-context learning with GPT-4 to generate programs designed for logical reasoning tasks.

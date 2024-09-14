@@ -224,10 +224,10 @@ def main(args):
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='GPT API')
-    parser.add_argument('--gpt_results_dir', type=str, default="docs_anon.json")
+    parser.add_argument('--gpt_results_dir', type=str, default="predictions.json")
     parser.add_argument('--method', type=str, default='bge-large')
     parser.add_argument('--data_dir', type=str, default="quest_data")
-    parser.add_argument('--result_dir', type=str, default="res_docs_anon_1000.json")
+    parser.add_argument('--result_dir', type=str, default="res_predictions_1000.json")
     parser.add_argument('--gold_examples_dir', type=str, default='test.jsonl')
     parser.add_argument('--oracle_docs',action='store_true') # default false now!
     parser.add_argument('--replace_find',action='store_false') # default true now!
