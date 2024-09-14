@@ -59,8 +59,7 @@ class EvaluateQueryDataset(Dataset):
             self.attention_mask.extend(batch_dict['attention_mask'])
             
         assert(len(self.ids) == len(self.input_ids) == len(self.attention_mask))
-        a=1
-        # return tokenized_data
+
 
     def __len__(self):
         """
@@ -77,8 +76,7 @@ class EvaluateQueryDataset(Dataset):
         return {'ids':id, "input_ids": input_id,
                  'attention_mask':attention_mask
                 }
-        # return self.tokenized_data[idx]
-
+  
 class EvaluateDocsDataset(Dataset):
 
 

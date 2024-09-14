@@ -6,7 +6,7 @@ from quest.common.example_utils import Example
 from data.prepare_dataset import read_queries, read_docs
 import os
 from quest.common import example_utils
-from python_interpreters_docs_anon import create_results
+from utils import create_results
 import argparse
 from tqdm import tqdm
 # import faiss
@@ -19,10 +19,7 @@ def create_doc_index():
     doc_embed_5 = np.load(os.path.join(args.files_dir,'docs_300000_325504_last_zero_shot_mistral.npy'))
     doc_embed_6 = np.load(os.path.join(args.files_dir,'docs_325504_325505_last_zero_shot_mistral.npy'))
     doc_embed = np.concatenate((doc_embed_1, doc_embed_2, doc_embed_3, doc_embed_4, doc_embed_5, doc_embed_6))
-    # doc_embed = doc_embed / np.linalg.norm(doc_embed, ord=2, axis=1, keepdims=True)
-    # print(doc_embed.shape[0],len(doc_title_map))
-    # assert(doc_embed.shape[0] == len(doc_title_map))
-    # index = faiss.IndexFlatIP(doc_embed[0].shape[1])
+
     return doc_embed
 
 def test_correct_docs(doc_embed):
@@ -58,26 +55,19 @@ def main(args):
     query_embed = np.load(os.path.join(args.files_dir,'query_0__last_zero_shot_mistral.npy'))
     query_embed = torch.from_numpy(query_embed)
     query_embed = F.normalize(query_embed, p=2, dim=1)
-    # query_embed = query_embed / np.linalg.norm(query_embed, ord=2, axis=1, keepdims=True)
-    
-    #doc_embed = np.load(os.path.join(args.files_dir,'docs_325504_325505_last_zero_shot_mistral.npy'))
+ 
     doc_embed = create_doc_index()
 
     test_correct_docs(doc_embed)
     exit()
 
     doc_embed = torch.from_numpy(doc_embed)
-    # doc_embed = torch.cat((doc_embed,doc_embed)) #! dummy
     doc_embed = F.normalize(doc_embed, p=2, dim=1)
-    # sim = query_embed @ doc_embed.T
-    # top_k_values, top_k_indices = torch.topk(sim, eval_k, dim=1, sorted=True)
-
+ 
     all_pred_examples = []
     new_gold_examples = []
     # Creating examples and adding them to the list
     for i, (qid, query_text) in tqdm(enumerate(dict_query_ids_queries.items())):
-        # query_text = dict_query_ids_queries[qid] # correct query
-        # sim, top_k_indices = doc_index.search(query_embed[i], k=eval_k)
         sim = query_embed[i] @ doc_embed.T
         top_k_values, top_k_indices = torch.topk(sim, eval_k, dim=-1, sorted=True)
         print(f'ind {top_k_indices.shape} values {top_k_values.shape} sim {sim.shape}')

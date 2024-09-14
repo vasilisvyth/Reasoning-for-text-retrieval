@@ -52,30 +52,18 @@ def create_embeddings(dataloader, rand_dids, device, model):
     
     with torch.no_grad():
         for i, batch in enumerate(tqdm(dataloader)):
-            #assert(batch_dict['input_ids'][0] == batch['input_ids'][0][12:].tolist())
+
             dids = rand_dids[i:i+args.batch_size]
-            # dids = batch.pop('ids')
+      
             batch = {key: batch[key].to(device) for key in batch}
-            # tokenizer.batch_decode(input_ids)[0]
-            # generated_ids = model.generate(input_ids, attention_mask = attention_mask,max_new_tokens=max_new_tokens)
-            # outputs = model(**batch)
+
             embeddings = last_token_pool(model, batch['input_ids'], batch['attention_mask'])
             last_layer_embeds.append(embeddings.cpu().numpy())
             torch_last_layer_embeds.append(embeddings.cpu())
-            # cur_all_embed = [hidden_state[:,-1].cpu() for hidden_state in outputs.hidden_states[-6:-1]] # len(layers) each torch size[batch_size, hidden_dim]
-            # cur_all_embed = torch.stack(cur_all_embed)
-            # all_layers_embed.append(cur_all_embed)
-            # if i > 6: break
             all_dids.extend(dids)
             
         last_layer_embeds = np.concatenate(last_layer_embeds, axis=0)
         torch_last_layer_embeds = torch.cat(torch_last_layer_embeds)
-        # # Step 1: Stack each element in the inner lists along the second dimension
-        # stacked_batches = [torch.stack(batch, dim=1) for batch in all_layers_embed]
-
-        # # Step 2: Concatenate the batches along the first dimension
-        # final_tensor = torch.cat(stacked_batches, dim=0)
-
 
     return last_layer_embeds, torch_last_layer_embeds
 
@@ -171,7 +159,8 @@ def main(args):
 
     if args.encode_rand_docs:
         print('Encode rand docs...')
-        doc_text_map, doc_title_map = read_docs(os.path.join(data_dir,'doc_text_list.pickle'), os.path.join(data_dir,'doc_title_map.tsv'))
+        doc_text_path, doc_title_path = os.path.join(data_dir,'doc_text_list.pickle'), os.path.join(data_dir,'doc_title_map.tsv')
+        doc_text_map, doc_title_map = read_docs(doc_text_path, doc_title_path)
         rand_dids_path = os.path.join('files','rand_dids_for_mistral_assert.pickle')
         
         ids = [0,1,70000-1,70000,70001, 150000-1,150000,150000+1, 220000-1,220000,220000+1,300000-1,300000,300000+1,325504-1,325504]
@@ -203,21 +192,7 @@ def main(args):
             '_ that are also both _ and _':0,
             '_ or _':0
         })
-
-    # docs_dataset = EvaluateDocsDataset(rand_doc_text_map, tokenizer)
-    
-    
-
-    # # Tokenize the input texts
-    # batch_dict = tokenizer(rand_doc_text[:10], max_length=args.max_length - 1, return_attention_mask=False, padding=False, truncation=True)
-    # # append eos_token_id to every input_ids
-    # batch_dict['input_ids'] = [input_ids + [tokenizer.eos_token_id] for input_ids in batch_dict['input_ids']]
-    # batch_dict = tokenizer.pad(batch_dict, padding=True, return_attention_mask=True, return_tensors='pt') # this is left padding automatically
   
-    #exit()
-   
-
-    # model.resize_token_embeddings(model.config.vocab_size + 1) # because we added pad_token    
     model = AutoModel.from_pretrained(args.model_name, output_hidden_states=args.output_hidden_states) #
     if args.better_transformer:
         model = model.to_bettertransformer()

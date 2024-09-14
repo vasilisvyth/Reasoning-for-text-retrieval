@@ -1,10 +1,6 @@
 # clear, understandable with some effort, ambiguous
 # query_type {extremely long-tail, long-tail, common}, “{query_length}” ∈ {less than 5 words, 5 to 15 words, at least 10 words
-# Fix the following error
-# File "c:\Users\vasil\reasoning-for-text-retrieval\Reasoning-for-text-retrieval\templates\data_augmentation\synthetic_data.py", line 23, in <module>
-#     instruct = instructions[0].format(domain='films')
-#                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# KeyError: 'title'
+#e5-mistral
 
 instructions =[ \
 '''

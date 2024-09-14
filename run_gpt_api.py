@@ -22,32 +22,15 @@ from tenacity import (
     retry,
     stop_after_attempt,
     wait_random_exponential,
-)  # for exponential backoff
+)  
 
 def gpt_api_call(test_dict, args, openai_key, file_path):
     completion_tokens = 0
     prompt_tokens = 0
 
     client =  initialize_openai_client(openai_key)
-    # selected_qids = [533, 536, 538, 88, 89, 104, 106, 128, # wrong negation
-    #     74, 108, 125, 524, #correct negation
-    #     1470, 1474, 1440, 1452, 1455, 1461, 1466, 1009, #wrong and
-    #     1483, 602, 142, 619, 195]
-    # selected_qids = sorted(selected_qids)[17:]
-    
+
     for qid, query in enumerate(tqdm(test_dict)):
-            # we randomly use a sentence with 0.23 probability
-            # p = random.uniform(0, 1)
-            # if p >= 0.09:
-            #     continue
-            # if qid not in random_ids:
-            #     continue
-            # random_ids.append(qid)
-            # i += 1
-            # if i == 43:
-            #     break
-            # if qid not in selected_qids:
-            #     continue
 
             full_prompt = test_dict[query]['prompt']
             instruction = test_dict[query]['instruction']
@@ -121,14 +104,13 @@ def main(args):
     for test_example in test_examples:
         query = test_example.query
         if args.dem_method=='rand':
-            selected_demonstrations_ids = create_rand_demonstrations(args.seed, args.num_demonstrations, DEMONSTRATIONS_DOCS_N_GRAM)
+            SELECTED_DEMONSTRATIONS_IDS = create_rand_demonstrations(args.seed, args.num_demonstrations, DEMONSTRATIONS_DOCS_N_GRAM)
         else:
-            #  = [ DEMONSTRATIONS_BETTER_DEM['ex2'], DEMONSTRATIONS_BETTER_DEM['ex4'], DEMONSTRATIONS_BETTER_DEM['ex6'], DEMONSTRATIONS_BETTER_DEM['ex3'] ]
-            selected_demonstrations_ids = [2,4,6,3]
-            #selected_demonstrations_ids = [2,4,6,3,1,5]
-            random.shuffle(selected_demonstrations_ids)
+            SELECTED_DEMONSTRATIONS_IDS = [2,4,6,3]
+
+            random.shuffle(SELECTED_DEMONSTRATIONS_IDS)
         if not args.q2doc:
-            demonstations_text, demonstrations_ops = concat_demonstations(args.seed, selected_demonstrations_ids, DEMONSTRATIONS_DOCS_N_GRAM)
+            demonstations_text, demonstrations_ops = concat_demonstations(args.seed, SELECTED_DEMONSTRATIONS_IDS, DEMONSTRATIONS_DOCS_N_GRAM)
             demonstations_text = concat_test2prompt(demonstations_text, query, TEST_TEMPLATE_DOCS_N_GRAM)
             demonstations_text = demonstations_text.lstrip()
         else:
@@ -144,9 +126,6 @@ def main(args):
 
     file_path = out_name
     gpt_api_call(test_dict, args, openai_key, file_path)
-
-    # ans = safe_execute(program)
-    # print(ans)
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='GPT API')

@@ -1,3 +1,5 @@
+# baseline given a document our goal is to generate a query
+
 import openai
 import argparse
 import os
@@ -10,13 +12,16 @@ from seeds import set_seed
 from data.prepare_dataset import read_docs
 import random
 
+SYSTEM = 'Your mission is to write one text retrieval example in JSON format.'
 def main(args):
-    set_seed(0)
-    temperature = None
-    N = 1
+    set_seed(args.seed)
+    temperature = args.temperature
+    N = args.N
 
     # load docs
-    doc_text_map, doc_title_map = read_docs(os.path.join(args.data_dir,'doc_text_list.pickle'), os.path.join(args.data_dir,'doc_title_map.tsv'))
+    doc_text_path = os.path.join(args.data_dir,'doc_text_list.pickle')
+    doc_title_path = os.path.join(args.data_dir,'doc_title_map.tsv')
+    doc_text_map, doc_title_map = read_docs(doc_text_path, doc_title_path)
 
 
     tmp_instruction = doc2query[args.instruction_num]
@@ -28,9 +33,6 @@ def main(args):
     # res = load_pickle('data_gpt-3.5-turbo-0125_instruction_0_temp_1_n_2.pickle')
     
     openai_key = input("What is your OpenAI key? ")
-    # out_name = input('What is the output file name? Do not add .json at the end ')
-    # out_name +='.json'
-    
 
     client =  initialize_openai_client(openai_key)
     domains =['book']#,'plant','animal','book']
@@ -43,7 +45,7 @@ def main(args):
         instruct = tmp_instruction.format(domain=domain, document = doc_text_map[rand_doc])
  
 
-        messages = [{"role": "system", "content": 'Your mission is to write one text retrieval example in JSON format.'},
+        messages = [{"role": "system", "content": SYSTEM},
                     {"role": "user", "content": instruct} ]
         
         result = chat_completion(client, args.model_name, messages, args.seed, args.max_tokens, N, temperature, response_format)
@@ -68,8 +70,11 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser(description='Generate data')
     parser.add_argument('--instruction_num', default=0, type=int)
     parser.add_argument('--seed',type=int, default=0)
+    parser.add_argument('--N',type=int, default=1)
+    parser.add_argument('--temperature',type=int, default=None)
     parser.add_argument('--max_tokens',type=int, default=1200)
     parser.add_argument('--model_name', default='gpt-3.5-turbo-0125', type=str)
     parser.add_argument("--data_dir", type=str, default='quest_data', help="The data folder where you have the data")
     args = parser.parse_args()
     main(args)
+    

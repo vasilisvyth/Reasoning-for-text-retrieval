@@ -1,4 +1,4 @@
-from python_interpreter import find_logical_operators
+
 from sentence_transformers import SentenceTransformer
 import numpy as np
 import os
@@ -11,15 +11,12 @@ from seeds import set_seed
 import transformers
 import json
 from tqdm import tqdm
-from python_interpreters_docs_anon import preprocess_find_docs_call, current_program, synthesize_program
+from utils import current_program, preprocess_find_docs_call,synthesize_program
 from quest.common import document_utils
 from tools import DocumentFinder
 
-def test_logical_operators():
-    program = 'A and not B'
-    find_logical_operators(program)
 
-def zero_shot_gtr_docs():
+def test_zero_shot_gtr_docs():
     model = SentenceTransformer('sentence-transformers/gtr-t5-large')
     path_doc_text_list = os.path.join('quest_data','doc_text_list.pickle')
     path_doc_title_map = os.path.join('quest_data','doc_title_map.tsv')
@@ -59,9 +56,9 @@ def finetuned_embed_docs():
     
     print(torch.max(torch.abs(docs[doc_id]-embed_doc[doc_id])))
     print(transformers.__version__)
-    a=1
+ 
 
-def program_check():
+def test_program_check():
     file = open('docs_anon.json', "r")
     documents = document_utils.read_documents("quest_data\\documents.jsonl")
     results_json = json.load(file)
@@ -75,13 +72,13 @@ def program_check():
 
         custom_dict_0 = DocumentFinder.find_docs(query,var_dict['question_0'])
         custom_dict_1 = DocumentFinder.find_docs(query,var_dict['question_1'])
-        a=1
+        
         assert(custom_dict_0.data ==var_dict['docs_0'].data)
         assert(custom_dict_1.data ==var_dict['docs_1'].data)
         break
-    a=1
+   
 
-def replace_rows():
+def test_replace_rows():
     import torch
 
 
@@ -101,15 +98,3 @@ def replace_rows():
     assert(torch.all(replacement_tensor[0] ==original_tensor[indices_tensor[0]]))
     assert(torch.all(replacement_tensor[1] ==original_tensor[indices_tensor[1]]))
     assert(torch.all(replacement_tensor[2] ==original_tensor[indices_tensor[2]]))
-    a=1
-    # Now, original_tensor has updated values for the specified rows
-
-print('replace rows')
-replace_rows()
-# print('program check')
-# program_check()
-# print('finetuned embed docs')
-# finetuned_embed_docs()
-# test_and_operator()
-# zero_shot_gtr_docs()
-# test_logical_operators()

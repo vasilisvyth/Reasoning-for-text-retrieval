@@ -71,14 +71,6 @@ def calculate_queries_scores(args, model, doc_embs, dict_query_ids_queries, doc_
     path_results_csv = os.path.join('checkpoints','results.csv')
     update_results(path_results_csv, avg_recall_vals, avg_mrecall_vals, all_rec_per_template, avg_scores, INFO)
     create_pickle(top_k_docs_ids,f'bge_large__0_rand_ids_top_{k}.pickle')
-    # special care is needed for the NOT operator
-    k = 10  # Number of results you want
-    # scores, indices = index.search(query_vector, k)
-
-    # # Get the k documents with the lowest scores
-    # sorted_indices = np.argsort(scores.flatten())
-    # top_k_indices = indices[0][sorted_indices]
-
 
 
 def print_args(args):

@@ -6,15 +6,12 @@ from peft import LoraConfig, get_peft_model, prepare_model_for_int8_training
 import json
 
 def model_init(model_name_or_dir):
-    # if 't5' in model_name_or_dir:
-            # check https://github.com/UKPLab/sentence-transformers/blob/master/sentence_transformers/models/Transformer.py#L53
-    if 't5' in model_name_or_dir or 'checkpoints' in model_name_or_dir:
+   if 't5' in model_name_or_dir or 'checkpoints' in model_name_or_dir:
         T5EncoderModel._keys_to_ignore_on_load_unexpected = ["decoder.*"]  # decoder and anything after it, probably not needed at all
         model = T5EncoderModel.from_pretrained(model_name_or_dir)
-        # self.encode_fn = self.encode_mean_polling  
+
     elif model_name_or_dir == 'mistralai/Mistral-7B-v0.1':
-        #! maybe needed Initializing a Mistral 7B style configuration
-        #configuration = MistralConfig()
+        
         print('using mistral model')
         model = MistralEmbedding.from_pretrained(model_name_or_dir, load_in_8bit = True, device_map="auto")
         model = prepare_model_for_int8_training(model)
@@ -28,7 +25,7 @@ def model_init(model_name_or_dir):
     else:
         print('using AutoModel')
         model = AutoModel.from_pretrained(model_name_or_dir)
-        # self.encode_fn = self.encode_cls  # Use encode for other models
+
     return model
 
 def print_params_counter(model, model_name_or_dir):

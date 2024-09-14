@@ -60,24 +60,17 @@ class HFTrainer(Trainer):
             for batch in tqdm(
                 docs_data_loader, desc="Encoding the docs", position=0, leave=True
             ):
-                # i+=1
-                # if i > 10:
-                #     break
+             
                 dids = batch.pop('ids').tolist()
                 in_ids =  batch['input_ids'].to(device)
                 att_mask = batch['attention_mask'].to(device)
-                # if self.fp_16:
-                
+            
                 docs_scores = self.model.encode_fn(input_ids =in_ids, attention_mask = att_mask).cpu()
-                # docs_scores = torch.rand(len(dids))
-                # if i == 0:
-                #     print(docs_scores[0])
-
+       
                 all_dids.extend(dids)
                 all_docs_scores.append(docs_scores)
                 
-            # print('BREAK DOC')
-            
+      
         print('SAVE DOCS SCORES!!!')
         docs_scores_path = os.path.join(self.args.output_dir, f'scores_docs_check_{self.state.global_step}.pt')
         all_docs_scores = torch.cat(all_docs_scores,dim=0)
@@ -148,23 +141,16 @@ class HFTrainer(Trainer):
         os.makedirs(output_dir, exist_ok=True)
         logger.info(f"Saving model checkpoint to {output_dir}")
         self.model.save_pretrained(output_dir, state_dict=state_dict)
-        # if self.data_collator.tokenizer is not None:
-           
-        # Good practice: save your training arguments together with the trained model
+
         torch.save(self.args, os.path.join(output_dir, 'my_args.bin'))
     
 
     def _maybe_log_save_evaluate(self, tr_loss, model, trial, epoch, ignore_keys_for_eval):
         if self.control.should_log:
-            # if is_torch_tpu_available():
-            #     xm.mark_step()
-
+  
             logs: Dict[str, float] = {}
 
-            # all_gather + mean() to get average loss over all processes
             tr_loss_scalar = self._nested_gather(tr_loss).mean().item()
-
-            # reset tr_loss to zero
             tr_loss -= tr_loss
 
             logs["loss"] = round(tr_loss_scalar / (self.state.global_step - self._globalstep_last_logged), 4)

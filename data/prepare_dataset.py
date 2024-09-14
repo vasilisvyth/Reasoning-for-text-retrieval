@@ -69,15 +69,11 @@ def split(dict_query_ids_queries, query_ids_doc_ids, examples_train):
     train_qids = qids[:-EXTRA_SIMPLE_VAL_EX]
     val_qids = qids[-EXTRA_SIMPLE_VAL_EX:]
 
-    # train_dict_query_ids_queries_filtered, train_query_ids_doc_ids_filtered, filtered_train_examples = filter_data(train_qids, dict_query_ids_queries, query_ids_doc_ids,'train', examples_train)
-    # val_dict_query_ids_queries_filtered, val_query_ids_doc_ids_filtered, filtered_val_examples = filter_data(val_qids, dict_query_ids_queries, query_ids_doc_ids,'val', examples_train)
-
     train_data  = filter_data(train_qids, dict_query_ids_queries, query_ids_doc_ids,'train', examples_train)
     val_data  = filter_data(val_qids, dict_query_ids_queries, query_ids_doc_ids,'val', examples_train)
 
     return (*train_data, *val_data)
-    # return train_dict_query_ids_queries_filtered, train_query_ids_doc_ids_filtered, val_dict_query_ids_queries_filtered, val_query_ids_doc_ids_filtered, filtered_train_examples, filtered_val_examples
-
+  
 def read_docs(doc_text_list_dir, doc_title_map_dir):
     #  doc_ids_documents
     with open(doc_text_list_dir, 'rb') as f:
@@ -144,6 +140,3 @@ def test_positive_pairs():
     assert(val_dict_query_ids_queries_filtered == {1000+0:'0 q',1000+12:'12 q'})
     assert(val_query_ids_doc_ids_filtered == [[1000,'10'],[1000,'12'],[1012,'10']])
     assert(filtered_val_examples == examples)
-    a=1
-
-# test_positive_pairs()

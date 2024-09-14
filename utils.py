@@ -20,7 +20,7 @@ def tokenize_demonstrations(tokenizer, demonstrations, seed):
         dict_tokenized_demonstations[ex_key] = tokenizer(tmp_demonstration_txt)
         # dict_tokenized_demonstations[ex_key]['input_ids'].append(tokenizer.eos_token_id)
         # dict_tokenized_demonstations[ex_key]['attention_mask'].append(1)
-        # a=1
+        
 
     return dict_tokenized_demonstations
 
@@ -39,10 +39,7 @@ def json_list_to_txt(json_list, instruction, txt_file_path):
             for key, value in json_obj[0].items():
                 txt_file.write(f'"{key}": ')
                 if isinstance(value, dict) and len(value['text']) > 100:  # Check if value is a huge string
-                    # chunk_size = 100  # Set the chunk size according to your requirement
-                    # chunks = [value['text'][i:i+chunk_size] for i in range(0, len(value['text']), chunk_size)]
-                    # for chunk in chunks:
-                    #     write_chunk(chunk, txt_file)
+ 
                     chunks = value['text'].split(' ')  # Split the string into multiple lines
                     lines = [' '.join(chunks[i:i+STEP]) for i in range(0, len(chunks), STEP)]
                     for line in lines:
@@ -73,12 +70,6 @@ def update_results(results_path, avg_recall_vals, avg_mrecall_vals, all_rec_per_
 
     # # Update DataFrame with new results
     results_df = pd.concat([results_df, new_data])
-
-    # results_df['info'] = 
-
-    # # Step 3: Rearrange columns to place the new column at the beginning
-    # column_order = ['info'] + [col for col in results_df.columns if col != 'info']
-    # results_df = results_df[column_order]
 
     # Save DataFrame to store/results.csv
     results_df.to_csv(results_path)
@@ -112,11 +103,9 @@ def tokenize_data(test_dict_query_ids_queries, tokenizer, dict_tokenized_demonst
         if args.dem_method=='rand':
             selected_demonstrations_ids = create_rand_demonstrations(args.seed, args.num_demonstrations, DEMONSTRATIONS_DOCS_ANON)
         else:
-            #  = [ DEMONSTRATIONS_BETTER_DEM['ex2'], DEMONSTRATIONS_BETTER_DEM['ex4'], DEMONSTRATIONS_BETTER_DEM['ex6'], DEMONSTRATIONS_BETTER_DEM['ex3'] ]
             selected_demonstrations_ids = [2,4,6,3]
             random.shuffle(selected_demonstrations_ids)
 
-        #tokenized_instuction = tokenizer('Below is an instruction that describes a task. Write python code that appropriately completes the request. Think step by step')
         tokenized_instuction = tokenizer(instruction)
         input_ids = tokenized_instuction['input_ids']
         attention_mask = tokenized_instuction['attention_mask']
@@ -199,3 +188,162 @@ def load_pickle(file_name):
         object = pickle.load(file)
     return object
 
+
+def set_conversion(str):
+    str = str.replace('and not','-')
+    str = str.replace(' and ',' & ')
+    str = str.replace(' or ',' | ')
+
+    return str
+
+
+def current_program(program):
+    '''
+    the last 3 arguments are added for debugging purpose
+    '''
+  
+    answer_index = program.index('ans = ')
+    answer_code = program[answer_index:]
+
+    # if results_json[query]['template'] != '_ that are also _':
+    #     continue
+    answer_code_with_sets = set_conversion(answer_code)
+    final_program = program[:answer_index] + answer_code_with_sets+"\n"
+
+    var_dict = safe_execute(final_program)
+
+    return var_dict
+
+def preprocess_find_docs_call(query, result, class_name):
+    replacement_query = query.replace("'", "\\'")  # Escape single quotes
+    new_result = result.replace("find_docs(",f"{class_name}.find_docs('{replacement_query}',")
+    return new_result
+
+
+def create_results(new_gold_examples, pred_examples, count_bug, INFO):
+    avg_prec, avg_rec, avg_f1 = calc_f1_pr_rec(new_gold_examples, pred_examples)
+
+    avg_scores = {'avg_prec':avg_prec['all'], 'avg_rec':avg_rec['all'], 'avg_f1':avg_f1['all']}
+    avg_recall_vals, avg_mrecall_vals, all_rec_per_template = calc_mrec_rec(new_gold_examples, pred_examples)
+
+    avg_recall_vals = {f'avg_R@{key}':value for key, value in avg_recall_vals.items()}
+    avg_mrecall_vals = {f'avg_MR@{key}':value for key, value in avg_mrecall_vals.items()}
+
+    print(f'count bugs {count_bug}')
+    path_results_csv = os.path.join('checkpoints','results.csv')
+    update_results(path_results_csv, avg_recall_vals, avg_mrecall_vals, all_rec_per_template, avg_scores, INFO)
+
+    create_pickle(avg_recall_vals,'baseline_avg_rec.pickle')
+    create_pickle(avg_mrecall_vals,'baseline_avg_mrec.pickle')
+
+def plot_lens(lens_per_template):
+    means = {key: np.mean(values) for key, values in lens_per_template.items()}
+    std_devs = {key: np.std(values) for key, values in lens_per_template.items()}
+
+    # Create a bar plot
+    fig, ax = plt.subplots()
+
+    # Plotting the means
+    ax.bar(means.keys(), means.values(), yerr=std_devs.values(), capsize=5, color='skyblue', label='Mean')
+
+    # Adding labels and title
+    ax.set_ylabel('Retrieved docs per template')
+    ax.set_xlabel('Templates')
+    ax.set_title('Mean and Standard Deviation for Each Key')
+    ax.legend()
+
+    # Show the plot
+    plt.show()
+
+def append_subq_examples(var_dict, docs_var, documents, example, question_id, new_gold_examples, new_pred_examples):
+    subq_dids = list(var_dict[docs_var].data.keys())[:1000]
+    subq_docs = [documents[idx].title for idx in subq_dids]
+    # put as gold question the generated subquestion to avoid duplicates and as docs the ones of the original question
+    gold_subq_example = Example(query=var_dict[f'question_{question_id}'], docs=example.docs, metadata=ExampleMetadata(template=example.metadata.template))
+    new_gold_examples.append(gold_subq_example)
+
+    subq_example = Example(query=var_dict[f'question_{question_id}'], docs=subq_docs, metadata=ExampleMetadata(template=example.metadata.template))
+    new_pred_examples.append(subq_example)
+
+def process_template_example(example, var_dict, documents, new_gold_examples, new_pred_examples):
+    if (example.metadata.template=='_ that are also _' or example.metadata.template=='_ that are also both _ and _'):
+        for key in var_dict:
+            if key.startswith('docs_'):
+                question_id = int(key[key.index('_')+1:])
+                append_subq_examples(var_dict, key, documents, example, question_id, new_gold_examples, new_pred_examples)
+                
+
+    if (example.metadata.template == '_ that are not _'):
+
+        append_subq_examples(var_dict, 'docs_0', documents, example, 0, new_gold_examples, new_pred_examples)
+
+    if (example.metadata.template == '_ that are also _ but not _'):
+        append_subq_examples(var_dict, 'docs_0', documents, example, 0, new_gold_examples, new_pred_examples)
+        append_subq_examples(var_dict, 'docs_1', documents, example, 1, new_gold_examples, new_pred_examples)
+
+def extract_subquestions(var_dict):
+    questions = []
+    for key in var_dict:
+        if key.startswith('docs_'):
+            question_id = int(key[key.index('_')+1:])
+            question = var_dict[f'question_{question_id}']
+            questions.append(question)
+    
+    return questions
+
+def build_oracle_docs():
+    domains = set() # 
+    counter = 0
+    count_new_docs = 0
+    oracle_examples_dict = {}
+    new_gold_examples = []
+    for example in gold_examples:
+        attributions_dict = example.metadata.attributions
+        if attributions_dict is None:
+            counter +=1
+            domains.add(example.metadata.domain)
+            continue
+        assert(len(example.docs) == len(attributions_dict))
+
+        new_gold_examples.append(example)
+        oracle_examples_dict[example.query] = {}
+        a=1
+        for doc_title in attributions_dict: #dict
+            doc_id = title_doc_map[doc_title]
+            original_doc_text = doc_text_map[doc_id] 
+
+            query_doc_list = [el for el in attributions_dict[doc_title] if el != None]
+            new_doc_text = '' # sometimes duplicate doc substring  
+            for i in range(len(query_doc_list)):
+                for subquery in query_doc_list[i]: #dict
+                    doc_substring = query_doc_list[i][subquery]
+                    new_doc_text += doc_substring
+
+            if new_doc_text != '':
+                count_new_docs +=1
+                doc_id = title_doc_map[doc_title]
+
+                oracle_examples_dict[example.query][doc_id]  = new_doc_text
+        gold_examples = new_gold_examples # we only care about examples with attributions
+
+    return gold_examples, oracle_examples_dict
+
+def process_rand_ids_and_gold_examples():
+    rand_dids_path = os.path.join('files','with_true_bge_large__0_rand_ids_top_25.pickle')
+    dids = load_pickle(rand_dids_path)
+    
+
+    test_dict_query_ids_queries, test_query_ids_doc_ids = read_queries(os.path.join(args.data_dir,'test_query_ids_queries.tsv'), 
+                                                os.path.join(args.data_dir,'test_query_ids_doc_ids.tsv'))
+    rand_qids_path = os.path.join('files','rand_qids.pickle')
+    rand_qids = load_pickle(rand_qids_path)
+
+    new_gold_examples = []
+    for qid in rand_qids:
+        query = test_dict_query_ids_queries[qid]
+        for ex in gold_examples:
+            if ex.query == query:
+                new_gold_examples.append(ex)
+                break
+    
+    return new_gold_examples

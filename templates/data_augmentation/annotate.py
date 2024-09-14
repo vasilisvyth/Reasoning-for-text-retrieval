@@ -1,4 +1,3 @@
-# I have not tried yet this prompt
 intersect = """
 CONVERT UNION TO INTERSECTION AND SEE WHETHER THE DOCUMENT IS RELEVANT FOR 
 THE NEW QUERY Q

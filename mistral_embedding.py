@@ -41,4 +41,3 @@ class MistralEmbedding(MistralPreTrainedModel): # see https://github.com/kamalkr
         # embeddings = self.last_token_pool(last_hidden_state, attention_mask)
 
         return last_hidden_state
-#  MistralForSequenceEmbedding.from_pretrained()

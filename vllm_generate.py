@@ -1,3 +1,4 @@
+# run inference using vllm in order to compare speed
 try:
     from vllm import LLM, SamplingParams
     # Rest of your code that uses the library
@@ -135,78 +136,7 @@ def main(args):
 
     with open(file_name, 'w') as f:
         json.dump(dict_generated, f, indent=2)
-    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    # print(f'device {device}')
-
-    # code_dataset = Code_llm_dataset(all_input_ids, all_attention_mask, all_qids)
     
-    # # if torch.cuda.is_bf16_supported():
-    # #     print('bf16 suported')
-
-    # # PROMPT = '[INST] Your task is to write 5 tests to check the correctness of a function that solves a programming problem. The tests must be between [TESTS] and [/TESTS] tags. You must write the comment "#Test case n:" on a separate line directly above each assert statement, where n represents the test case number, starting from 1 and increasing by one for each subsequent test case. Problem: Write a Python function to get the unique elements of a list. [/INST]'
-    # #! todo try bnf config
-    # kwargs = {}
-    # if args.bit4:
-    #     bnb_config = BitsAndBytesConfig(
-    #     load_in_4bit=True,
-    #     bnb_4bit_use_double_quant=True,
-    #     bnb_4bit_quant_type="nf4",
-    #     bnb_4bit_compute_dtype=torch.bfloat16
-    #     )
-    #     kwargs['quantization_config'] = bnb_config
-    # model = AutoModelForCausalLM.from_pretrained(args.model_name,load_in_8bit=args.bit8,device_map="auto",**kwargs)
-    
-    # if args.better_transformer:
-    #     model = model.to_bettertransformer()
-
-    # if not (args.bit8 or args.bit4):
-    #     model.to(device) # not needed for 4bit and 8bit
-
-    # dataloader = DataLoader(code_dataset,batch_size=args.batch_size, collate_fn=collator, shuffle=True)
-
-    # # model.resize_token_embeddings(model.config.vocab_size + 1) # because we added pad_token
-    # all_generated_ids = []
-    # all_qids = []
-    # i = 0
-    # max_new_tokens = args.max_gen_length
-    # print('before inference')
-    # # with torch.backends.cuda.sdp_kernel(enable_flash=False, enable_math=False, enable_mem_efficient=False):
-    # for batch in tqdm(dataloader):
-    #     input_ids = batch['input_ids'].to(device)
-    #     attention_mask = batch['attention_mask'].to(device)
-    #     # input_ids, attention_mask = input_ids[:2,:32], attention_mask[:2,:32]
-    #     # tokenizer.batch_decode(input_ids)[0]
-    #     qids = batch['qids']
-    #     generated_ids = model.generate(input_ids, attention_mask = attention_mask,max_new_tokens=max_new_tokens)
-    #     all_qids.extend(qids)
-    #     all_generated_ids.extend(generated_ids[:,-max_new_tokens:])
-    #     i+=1
-    #     if i > 3:
-    #         break
-    
-    #     print('GB ',bytes_to_giga_bytes(torch.cuda.max_memory_allocated()))
-
-    # dict_generated = {}
-    # for qid, generated_ids in zip(all_qids, all_generated_ids):
-    #     qid= qid.item()
-    #     query = test_dict_query_ids_queries[qid]
-    #     dict_generated[query] = tokenizer.decode(generated_ids, skip_special_tokens=True)
-   
-    # random_identifier = str(uuid.uuid4())[:5]
-    # print(f'random id {random_identifier}')
-    # if 'codellama' in args.model_name or 'WizardLM' in args.model_name:
-    #     index_name =  args.model_name.index('/')
-    #     file_name = random_identifier+'_'+args.model_name[index_name+1:]+'.json'
-    
-    # with open(file_name, 'w') as f:
-    #     json.dump(dict_generated, f, indent=2)
-    '''
-    dialogs: List[Dialog]
-    Dialog = List[Message]
-    Message(TypedDict):
-        role: Role
-        content: str
-    '''
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='Generate programs using open source programs')

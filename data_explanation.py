@@ -15,13 +15,7 @@ from time import sleep
 import random
 
 def main(args):
-    args.model_name = 'gpt-4-0125-preview'
     examples_test = example_utils.read_examples(os.path.join(args.data_dir,'test.jsonl'))
-    qs = []
-    for example in examples_test:
-        if example.metadata.template=='_':
-            qs.append(example.query)
-
 
     examples_train = example_utils.read_examples(os.path.join(args.data_dir,'train_aug.jsonl'))
     random.shuffle(examples_test)
@@ -33,7 +27,7 @@ def main(args):
     with open(f'{filename}.json', 'r') as j:
         test_dict= json.loads(j.read())
 
-    # res = load_pickle('data_gpt-3.5-turbo-0125_instruction_0_temp_1_n_2.pickle')    
+  
     openai_key = input("What is your OpenAI key? ")
 
     client =  initialize_openai_client(openai_key)
@@ -41,11 +35,10 @@ def main(args):
     completion_tokens = 0
     prompt_tokens = 0
     outputs = []
-    # test_dict = {}
+
     system_instruction = ''#'You are a prompt engineer expert. Your goal is to create a text instruction that will replace a query.'#'Your mission is to write one text retrieval example in JSON format.'
     wanb_logs = []
     wandb.init(project = 'Reasoning-for-text-retrieval')
-    # wandb.run.name = ''#'fortuitous-springroll-3'
     for i, example in tqdm(enumerate(examples_test)):
         if example.metadata.template != "_ that are not _": continue
         if example.query in test_dict:
@@ -119,7 +112,7 @@ if __name__=='__main__':
     parser.add_argument('--instruction_num', default=0, type=int)
     parser.add_argument('--seed',type=int, default=0)
     parser.add_argument('--max_tokens',type=int, default=1200)
-    parser.add_argument('--model_name', default='gpt-3.5-turbo-0125', type=str)
+    parser.add_argument('--model_name', default='gpt-4-0125-preview', type=str)
     parser.add_argument("--data_dir", type=str, default='quest_data', help="The data folder where you have the data")
     args = parser.parse_args()
     main(args)

@@ -1,3 +1,7 @@
+'''
+In this file we override many logical operators in order to be able to run our neurosymbolic algorithm
+'''
+
 import func_timeout
 # import faiss
 from transformers import AutoTokenizer, AutoModel
@@ -10,20 +14,6 @@ import numpy as np
 import torch.nn.functional as F
 from copy import deepcopy
 EXECUTION_TIMEOUT_TIME = 560
-# score_calculation = {
-#     'b25':
-
-# }
-
-
-# docs = torch.load('scores_docs_check_4000.pt')
-# checkpoints/google/t5-v1_1-base/model/checkpoint-4000
-# 'google/t5-v1_1-small'
-# model = DenseBiEncoder('checkpoints/4913e0dd-b8/checkpoint-13500/', False, False)
-# model.to(device)
-# with open('dum_bm25_obj.pickle', 'rb') as f:
-#     retriever = pickle.load(f)
-# model = SentenceTransformer('sentence-transformers/gtr-t5-large')
 
 class Operations():
     @classmethod
@@ -68,31 +58,9 @@ class CustomDictOperations:
     def __and__(self, other):# __and__ intersection
         result = {}
         for key in set(self.data.keys()) & set(other.data.keys()): # intersected keys
-            # tmp_result = 0
-            # counter = 0
-            # if key in self.data:
-            #     tmp_result += self.data[key]
-            #     counter +=1
-            # if key in other.data:
-            #     tmp_result += other.data[key]
-            #     counter +=1
 
-            # result[key] = tmp_result / counter #min(self.data[key],other.data[key])
-            #result[key] = (self.data[key] * other.data[key])
-            # result[key] = (self.data[key] + other.data[key]) / 2
             result[key] = Operations.calculate_score(self.data[key],other.data[key],'and')
         return CustomDictOperations(result)
-    # def intersection(self, *others):
-    #     result = {}
-    #     key_sets = [set(d.data.keys()) for d in [self] + list(others)]
-    #     common_keys = set.intersection(*key_sets)
-
-    #     for key in common_keys:
-    #         values = [d.data[key] for d in [self] + list(others)]
-    #         result[key] = sum(values) / len(values)
-
-    #     return CustomDictOperations(result)
-
 
     def __or__(self, other): #__or__ union
         result = {}
@@ -100,16 +68,6 @@ class CustomDictOperations:
             #result[key] = max(self.data.get(key, float('-inf')), other.data.get(key, float('-inf')))
             result[key] = Operations.calculate_score(self.data.get(key, float('-inf')), other.data.get(key, float('-inf')),'or')
         return CustomDictOperations(result)
-    # def union(self, *others):
-    #     result = {}
-    #     key_sets = [set(d.data.keys()) for d in [self] + list(others)]
-    #     all_keys = set.union(*key_sets)
-
-    #     for key in all_keys:
-    #         values = [d.data.get(key, float('-inf')) for d in [self] + list(others)]
-    #         result[key] = max(values)
-
-    #     return CustomDictOperations(result)
 
     def __sub__(self, other): #difference
         result = self.data.copy()
@@ -124,11 +82,7 @@ class CustomDictOperations:
     def items(self):
         return self.data.items()
 
-# dict1 = CustomDictOperations({'a': 1, 'b': 2, 'c': 3})
-# dict2 = CustomDictOperations({'a': 2, 'b': 3, 'd': 4})
-# dict3 = CustomDictOperations({'a': 3, 'b': 4, 'e': 5})
 
-# result = dict1.union(dict2, dict3)
 def apply_threshold(threshold, top_k_indices, top_k_values):
     if not isinstance(threshold, str):
         top_k_indices = top_k_indices[top_k_values > threshold]
@@ -188,8 +142,8 @@ class VP_HuggingFace:
 
         query = remove_prefix(query, cls.replace_find)
         if cls.method == 'mistral':
-            task_description = f'Given a web search query, retrieve relevant passages that answer the query'
-            query = f'Instruct: {task_description}\nQuery: {query}'
+            TASK_DESCRIPTION = f'Given a web search query, retrieve relevant passages that answer the query'
+            query = f'Instruct: {TASK_DESCRIPTION}\nQuery: {query}'
         
         if original_query not in cls.results: # if first subquestion that we encounter
             cls.results[original_query] = {}
@@ -275,8 +229,8 @@ class VP_SentenceTransformer:
             cls.results[original_query] = {}
 
         if cls.method == 'bge-large':
-            Instruction = 'Represent this sentence for searching relevant passages: '#Represent this sentence for searching relevant passages: '
-            query = Instruction+query
+            INSTRUCTION = 'Represent this sentence for searching relevant passages: '#Represent this sentence for searching relevant passages: '
+            query = INSTRUCTION+query
         if not cls.use_cache:
             embed_query = cls.model.encode(query,convert_to_tensor=True, normalize_embeddings = cls.normalize_embeddings)
         else:
@@ -339,37 +293,6 @@ class VP_BM25:
         ranked_doc = {key: Operations.custom_score(rank) for rank, key in enumerate(map_ind_sim, 1)} if cls.score != 'emb' else map_ind_sim
         return CustomDictOperations(ranked_doc)
 
-# class DocumentFinder:
-#     tokenizer = AutoTokenizer.from_pretrained('google/t5-v1_1-base')
-#     docs = torch.load('checkpoints/4913e0dd-b8/scores_docs_check_13500.pt', map_location=device)
-#     method = 't5-base'
-#     results = {}
-
-#     @classmethod
-#     def init(cls, model_name, docs, tokenizer, k, method, replace_find, score, threshold='None', use_sentence_transformer=False,
-#              normalize_embeddings=False, return_dict=True, oracle_examples_dict=None):
-#         # ... (Your existing initialization code)
-
-#     @classmethod
-#     def replace_rows(cls, original_query):
-#         # ... (Your existing replace_rows method)
-
-#     @classmethod
-#     def find_docs(cls, original_query, query, largest=True):
-#         method_classes = {
-#             't5-base': T5Method,
-#             'mistral': MistralMethod,
-#             'bm25': BM25Method,
-#             'gtr': GTRMethod,
-#             'bge-large': GTRMethod  # Assuming 'bge-large' uses the same logic as 'gtr'
-#         }
-
-#         method_class = method_classes.get(cls.method)
-#         if method_class:
-#             return method_class.find_docs(cls, original_query, query, largest)
-#         else:
-#             raise ValueError(f'{cls.method} is not allowed. We only allow bm25, gtr, bge-large or t5-base')
-
 
 def safe_execute(code_string: str, keys=None):
     '''
@@ -383,10 +306,7 @@ def safe_execute(code_string: str, keys=None):
             exec(x)
             locals_ = locals() # create copy of the current local variables
             return locals_
-            # if keys is None:
-            #     return locals_.get('answer', None)
-            # else:
-            #     return [locals_.get(k, None) for k in keys]
+
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -414,15 +334,5 @@ def synthesize_program(result: str, prefix: str) -> str:
             continue
         elif inside_code_block:
             program += line + '\n'
-        # elif line == '# Define the subquestions':
-        #     subquestions_block = True
-        # elif line == '# Combine using the correct logical operator if needed':
-        #     subquestions_block = False
-        # elif subquestions_block:
-        #     dict = safe_execute(line)
-        #     subquestions.extend(list(dict.values()))
 
-
-        # program += line + '\n'
-            
     return program

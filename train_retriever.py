@@ -1,3 +1,4 @@
+# baseline train retriever
 from quest.common import example_utils
 from quest.common import tsv_utils
 import argparse
@@ -28,11 +29,9 @@ def print_args(args):
         print(f"{arg}: {value}")
 
 def main(args):
-    # args.pretrained = 'google/t5-v1_1-base'
-    # args.only_simple_queries = True
-    # args.do_only_eval  = True
+
     args.tokenizer ='mistralai/Mistral-7B-v0.1'
-    args.do_train = True
+    # args.do_train = True
     print_args(args)
     set_seed(args.seed)
     
@@ -46,16 +45,19 @@ def main(args):
         tokenizer.pad_token_id = tokenizer.eos_token_id
     
     # Load training and validation examples
-    examples_train_aug = example_utils.read_examples(os.path.join(args.data_dir,'train_aug.jsonl'))
-    examples_val = example_utils.read_examples(os.path.join(args.data_dir,'val.jsonl'))
-    examples_test = example_utils.read_examples(os.path.join(args.data_dir,'test.jsonl'))
+    examples_train_aug = example_utils.read_examples(os.path.join(args.data_dir,args.examples_train_json))
+    examples_val = example_utils.read_examples(os.path.join(args.data_dir,args.examples_val_json))
+    examples_test = example_utils.read_examples(os.path.join(args.data_dir,args.examples_test_json))
     
     # Load training data related files
-    train_dict_query_ids_queries, train_query_ids_doc_ids = read_queries(os.path.join(args.data_dir, 'train_query_ids_queries.tsv'), 
-                                                                         os.path.join(args.data_dir,'train_query_ids_doc_ids.tsv'))
+    qids_queries_path = os.path.join(args.data_dir, args.train_query_ids_queries)
+    qids_dids_path = os.path.join(args.data_dir, args.train_query_ids_doc_ids)
+    train_dict_query_ids_queries, train_query_ids_doc_ids = read_queries(qids_queries_path, qids_dids_path)
 
     # load docs
-    doc_text_map, doc_title_map = read_docs(os.path.join(args.data_dir,'doc_text_list.pickle'), os.path.join(args.data_dir,'doc_title_map.tsv'))
+    doc_text_path = os.path.join(args.data_dir, args.doc_text_path)
+    doc_title_path = os.path.join(args.data_dir, args.doc_title_map)
+    doc_text_map, doc_title_map = read_docs(doc_text_path, doc_title_path)
 
     # Remove queries with metadata!= '_' from the dictionary
     if args.only_simple_queries:
@@ -73,11 +75,11 @@ def main(args):
     assert(len(train_query_ids) == len(train_doc_ids) == len(train_queries) ==  len(train_docs))
 
     # Load validation and test data related files
-    val_dict_query_ids_queries, _ = read_queries(os.path.join(args.data_dir,'val_query_ids_queries.tsv'), 
-                                                 os.path.join(args.data_dir,'val_query_ids_doc_ids.tsv'))
+    val_dict_query_ids_queries, _ = read_queries(os.path.join(args.data_dir,args.val_query_ids_queries), 
+                                                 os.path.join(args.data_dir,args.val_query_ids_doc_ids))
     
-    test_dict_query_ids_queries, _ = read_queries(os.path.join(args.data_dir,'test_query_ids_queries.tsv'), 
-                                                 os.path.join(args.data_dir,'test_query_ids_doc_ids.tsv'))
+    test_dict_query_ids_queries, _ = read_queries(os.path.join(args.data_dir,args.test_query_ids_queries), 
+                                                 os.path.join(args.data_dir,args.test_query_ids_doc_ids))
     if args.split:
         val_dict_query_ids_queries.update(val_dict_query_ids_queries_extra)
         examples_val.extend(examples_val_extra)
@@ -161,13 +163,10 @@ def main(args):
         optimizer = Adafactor(model.parameters(), scale_parameter=scale_parameter, relative_step=relative_step, warmup_init=warmup_init, lr=args.lr)
     else:
         optimizer=optim.AdamW(model.parameters(),lr=args.lr, betas=(0.9,0.999))
-    # lr_scheduler = AdafactorSchedule(optimizer)
 
-    # trainer = Trainer(model, training_args, data_collator = pair_collator, train_dataset=train_pair_dataset,
-    #                   eval_dataset=eval_dataset)#, callbacks=[],optimizers=(optimizer, lr_scheduler))  
     early_stopping = EarlyStoppingCallback(early_stopping_patience=3, early_stopping_threshold=0.05)
     
-    #     model(batch['query_ids'], batch['doc_ids'], batch['queries'], batch['docs'])
+
     trainer = HFTrainer(
         model,
         train_dataset=train_pair_dataset,
@@ -182,9 +181,7 @@ def main(args):
         #dataloader_num_workers 
         optimizers = (optimizer, None)
     )
-    # train_dataloader = trainer.get_train_dataloader()
-    # for batch in train_dataloader:
-    #     a=1
+ 
     if args.do_train:
         trainer.train()
         trainer.save_model()
@@ -277,6 +274,67 @@ if __name__=='__main__':
     )
     parser.add_argument(
         "--eval_steps", type=int, default=2, help="evaluate every"
+    )
+        parser.add_argument(
+        "--examples_train_json",
+        type=str,default='train_aug.jsonl',
+        help="examples train json",
+    )
+    parser.add_argument(
+        "--examples_val_json",
+        type=str,default='val.jsonl',
+        help="examples val json",
+    )
+    parser.add_argument(
+        "--examples_test_json",
+        type=str,default='test.jsonl',
+        help="examples test json",
+    )
+
+    parser.add_argument(
+        "--train_query_ids_queries",
+        type=str,default='train_query_ids_queries.tsv',
+        help="train qids queries",
+    )
+    parser.add_argument(
+        "--train_query_ids_doc_ids",
+        type=str,default='train_query_ids_doc_ids.tsv',
+        help="train qids dids",
+    )
+
+
+    parser.add_argument(
+        "--val_query_ids_queries",
+        type=str,default='val_query_ids_queries.tsv',
+        help="val_query_ids_queries",
+    )
+    parser.add_argument(
+        "--val_query_ids_doc_ids",
+        type=str,default='val_query_ids_doc_ids.tsv',
+        help="val_query_ids_doc_ids",
+    )
+    parser.add_argument(
+        "--test_query_ids_queries.tsv",
+        type=str,default='test_query_ids_queries.tsv',
+        help="test_query_ids_queries.tsv",
+    )
+    parser.add_argument(
+        "--test_query_ids_doc_ids",
+        type=str,default='test_query_ids_doc_ids.tsv',
+        help="test_query_ids_doc_ids",
+    )
+
+    parser.add_argument(
+        "--doc_text_path",
+        type=str,
+        default='doc_text_list.pickle',
+        help="doc text list",
+    )
+    parser.add_argument(
+        "--doc_title_map",
+        type=str,
+        default='doc_title_map.tsv',
+        help="doc title list",
     )
 
     # save_steps=100, #Number of updates steps before two checkpoint saves

@@ -1,17 +1,3 @@
-# coding=utf-8
-# Copyright 2018 The Google AI Language Team Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """Analyze retriever predictions."""
 
 from absl import app
@@ -21,20 +7,10 @@ from quest.common import example_utils
 from quest.eval import eval_utils
 
 
-# FLAGS = flags.FLAGS
-
-# flags.DEFINE_string("gold", "", "Examples jsonl file with gold document set.")
-
-# flags.DEFINE_string("pred", "", "Examples jsonl file with predicted documents.")
 
 offset = ''
 limit = ''
 verbose = False
-# flags.DEFINE_integer("offset", 0, "Start index for examples to process.")
-
-# flags.DEFINE_integer("limit", 0, "End index for examples to process if >0.")
-
-# flags.DEFINE_bool("verbose", False, "Whether to print out verbose debugging.")
 
 # Values of k to use to compute MRecall@k.
 K_VALS = [20, 50, 100, 1000]
@@ -109,10 +85,7 @@ def calc_mrec_rec(gold_examples, pred_examples):
 
     recall_avg_by_template = {f'R@{str(k)}:{key}': value for key, value in recall_avg_by_template.items()}
     all_recall_per_template.update(recall_avg_by_template)
-    # print('!'*17)
-    # print('returned')
-    # print('recall_avg_all', recall_avg_all)
-    # print('mrecall_avg_all', mrecall_avg_all)
+    
     avg_recall_vals[k] = recall_avg_all['all']
     avg_mrecall_vals[k] = mrecall_avg_all['all'] # I swapped order
     
@@ -120,25 +93,7 @@ def calc_mrec_rec(gold_examples, pred_examples):
 
 
 def main(unused_argv):
-  a=1
-  # path_doc_text_list = os.path.join('quest_data','doc_text_list.pickle')
-  # path_doc_title_map = os.path.join('quest_data','doc_title_map.tsv')
-  # _, doc_title_map = read_docs(path_doc_text_list, path_doc_title_map)
-
-  # path_val_query_ids_queries = os.path.join('quest_data','val_query_ids_queries.tsv')
-  # path_val_query_ids_doc_ids = os.path.join('quest_data','val_query_ids_doc_ids.tsv')
-
-  # val_dict_query_ids_queries, _ = read_queries(path_val_query_ids_queries, path_val_query_ids_doc_ids)
-  # gold_path = os.path.join('quest_data','val.jsonl')
   gold_examples = example_utils.read_examples('quest_data\\test.jsonl')
-  # pred_examples = []
-  # num_docs = len(doc_title_map)
-  # for ex in gold_examples:
-  #   query = ex.query
-  #   docs = [doc_title_map[random.randint(0,num_docs)] for i in range(5)]
-  #   pred_example = Example(query=query, docs=docs)
-  #   pred_examples.append(pred_example)
-
   pred_examples = example_utils.read_examples('bm25.out')
   calc_mrec_rec(gold_examples, pred_examples)
   

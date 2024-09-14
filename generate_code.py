@@ -27,8 +27,9 @@ def main(args):
 
     path = os.path.join(args.data_dir,args.test_file)
 
-    test_dict_query_ids_queries, _ = read_queries(os.path.join(args.data_dir,'test_query_ids_queries.tsv'), 
-                                                 os.path.join(args.data_dir,'test_query_ids_doc_ids.tsv'))
+    path_qid_queries = os.path.join(args.data_dir, args.test_query_ids_queries)
+    path_qid_did = os.path.join(args.data_dir, args.test_query_ids_doc_ids)
+    test_dict_query_ids_queries, _ = read_queries(path_qid_queries, path_qid_did)
 
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     # tokenizer info
@@ -49,12 +50,7 @@ def main(args):
     print(f'device {device}')
 
     code_dataset = Code_llm_dataset(all_input_ids, all_attention_mask, all_qids)
-    
-    # if torch.cuda.is_bf16_supported():
-    #     print('bf16 suported')
 
-    # PROMPT = '[INST] Your task is to write 5 tests to check the correctness of a function that solves a programming problem. The tests must be between [TESTS] and [/TESTS] tags. You must write the comment "#Test case n:" on a separate line directly above each assert statement, where n represents the test case number, starting from 1 and increasing by one for each subsequent test case. Problem: Write a Python function to get the unique elements of a list. [/INST]'
-    #! todo try bnf config
     kwargs = {}
     if args.bit4:
         bnb_config = BitsAndBytesConfig(
@@ -77,24 +73,21 @@ def main(args):
     # model.resize_token_embeddings(model.config.vocab_size + 1) # because we added pad_token
     all_generated_ids = []
     all_qids = []
-    i = 0
+
     max_new_tokens = args.max_gen_length
     print('before inference')
     # with torch.backends.cuda.sdp_kernel(enable_flash=False, enable_math=False, enable_mem_efficient=False):
     for batch in tqdm(dataloader):
         input_ids = batch['input_ids'].to(device)
         attention_mask = batch['attention_mask'].to(device)
-        # input_ids, attention_mask = input_ids[:2,:32], attention_mask[:2,:32]
-        # tokenizer.batch_decode(input_ids)[0]
+
         qids = batch['qids']
         generated_ids = model.generate(input_ids, attention_mask = attention_mask,max_new_tokens=max_new_tokens)
         all_qids.extend(qids)
         all_generated_ids.extend(generated_ids[:,-max_new_tokens:])
-        i+=1
-        if i > 2:
-            break
+       
     
-        print('GB ',bytes_to_giga_bytes(torch.cuda.max_memory_allocated()))
+        # print('GB ',bytes_to_giga_bytes(torch.cuda.max_memory_allocated()))
 
     dict_generated = {}
     for qid, generated_ids in zip(all_qids, all_generated_ids):
@@ -110,7 +103,7 @@ def main(args):
     
     with open(file_name, 'w') as f:
         json.dump(dict_generated, f, indent=2)
-    '''
+    '''test_query_ids_doc_ids
     dialogs: List[Dialog]
     Dialog = List[Message]
     Message(TypedDict):
@@ -122,6 +115,8 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser(description='Generate programs using open source programs')
     parser.add_argument('--test_file', type=str, default="test.jsonl")
     parser.add_argument('--data_dir', type=str, default="quest_data")
+    parser.add_argument('--test_query_ids_queries', type=str, default="test_query_ids_queries.tsv")
+    parser.add_argument('--test_query_ids_doc_ids', type=str, default="test_query_ids_doc_ids.tsv")
     parser.add_argument('--model_name', type=str, default="gpt2")
     parser.add_argument('--tokenizer', type=str, default="WizardLM/WizardCoder-Python-7B-V1.0")
     parser.add_argument('--dem_method', type=str, default="constant") # always the same four
